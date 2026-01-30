@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <rect width="200" height="200" fill="#f0f0f0"/>
+  <rect x="20" y="20" width="160" height="40" fill="#3b82f6" rx="4"/>
+  <text x="100" y="45" text-anchor="middle" fill="white" font-family="Arial" font-size="14">Button</text>
+  <rect x="20" y="80" width="160" height="100" fill="white" stroke="#e5e7eb" rx="4"/>
+  <text x="100" y="130" text-anchor="middle" fill="#6b7280" font-family="Arial" font-size="12">Content Area</text>
+</svg>

@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Sandpack 预览样式覆盖 */
+.sp-wrapper,
+.sp-layout,
+.sp-stack {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.sp-preview {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 300px !important;
+  flex: 1 !important;
+}
+
+.sp-preview-container {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.sp-preview-iframe {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 300px !important;
+  border: none !important;
+}
+
+/* 确保预览内容居中 */
+.sp-preview-actions {
+  display: none !important;
+}

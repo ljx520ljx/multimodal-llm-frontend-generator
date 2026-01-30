@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UI 交互演示 - 支付按钮</title>
+    <style>
+        /* 全局重置与基础样式 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        /* 模拟手机/卡片容器 */
+        .card {
+            background: white;
+            width: 320px;
+            padding: 40px 30px;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        /* 顶部图标区域 */
+        .icon-box {
+            width: 60px;
+            height: 60px;
+            background: #f0f7ff;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 20px;
+            color: #007AFF;
+        }
+
+        .icon-box svg {
+            width: 30px;
+            height: 30px;
+        }
+
+        /* 文字排版 */
+        h2 {
+            margin: 0 0 8px;
+            color: #1a1a1a;
+            font-size: 24px;
+        }
+
+        p {
+            margin: 0 0 30px;
+            color: #8e8e93;
+            font-size: 14px;
+        }
+
+        .price {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 40px;
+            display: block;
+        }
+
+        /* --- 核心交互按钮样式 --- */
+        .pay-btn {
+            width: 100%;
+            height: 56px;
+            border: none;
+            border-radius: 16px;
+            background-color: #007AFF; /* 初始蓝色 */
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pay-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* 状态样式：加载中 */
+        .pay-btn.loading {
+            background-color: #8AB4F8;
+            pointer-events: none;
+            width: 56px; /* 变成圆形 */
+            border-radius: 50%;
+            color: transparent; /* 隐藏文字 */
+        }
+
+        /* 加载圈动画 */
+        .loader {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            opacity: 0;
+        }
+
+        .pay-btn.loading .loader {
+            opacity: 1;
+        }
+
+        /* 状态样式：成功 */
+        .pay-btn.success {
+            background-color: #34C759; /* 成功绿色 */
+            pointer-events: none;
+            width: 100%; /* 恢复宽度 */
+            border-radius: 16px;
+        }
+
+        /* 成功图标 */
+        .check-icon {
+            display: none;
+            width: 20px;
+            height: 20px;
+        }
+
+        .pay-btn.success .btn-text {
+            display: none;
+        }
+
+        .pay-btn.success .success-text-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        /* 动画定义 */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="icon-box">
+        <!-- 简单的购物车图标 -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+    </div>
+    <h2>高级会员订阅</h2>
+    <p>解锁所有高级功能，按月付费</p>
+    <span class="price">$50.00</span>
+
+    <!-- 交互按钮 -->
+    <button class="pay-btn" id="payBtn" onclick="startPayment()">
+        <span class="btn-text">立即支付</span>
+        <div class="loader"></div>
+
+        <div class="success-text-group" style="display: none;">
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display: block; color: white;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span>支付成功</span>
+        </div>
+    </button>
+
+    <p style="margin-top: 20px; font-size: 12px; color: #ccc; cursor: pointer;" onclick="resetBtn()">[点击此处重置演示]</p>
+</div>
+
+<script>
+    function startPayment() {
+        const btn = document.getElementById('payBtn');
+        const btnText = btn.querySelector('.btn-text');
+        const successGroup = btn.querySelector('.success-text-group');
+
+        // 1. 进入加载状态
+        btn.classList.add('loading');
+
+        // 2. 模拟网络请求 (1.5秒后变成功)
+        setTimeout(() => {
+            btn.classList.remove('loading');
+            btn.classList.add('success');
+            successGroup.style.display = 'flex';
+
+        }, 1500);
+    }
+
+    function resetBtn() {
+        const btn = document.getElementById('payBtn');
+        const successGroup = btn.querySelector('.success-text-group');
+
+        btn.classList.remove('loading', 'success');
+        successGroup.style.display = 'none';
+    }
+</script>
+</body>
+</html>

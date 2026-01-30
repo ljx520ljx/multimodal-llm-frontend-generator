@@ -1,0 +1,270 @@
+openapi: 3.0.3
+info:
+  title: Multimodal LLM Frontend Generator API
+  description: |
+    API for generating interactive frontend prototypes from UI design images
+    using multimodal large language models.
+  version: 1.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the API server
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/upload:
+    post:
+      summary: Upload UI design images
+      description: |
+        Upload one or more UI design images for code generation.
+        Images are processed, compressed, and stored in a session.
+      operationId: uploadImages
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                images:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+                  description: UI design images (alternative field name 'files')
+                session_id:
+                  type: string
+                  format: uuid
+                  description: Optional existing session ID to add images to
+      responses:
+        '200':
+          description: Images uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidFormat:
+                  summary: Invalid image format
+                  value:
+                    error: "Invalid image format"
+                tooLarge:
+                  summary: Image too large
+                  value:
+                    error: "Image too large"
+
+  /api/generate:
+    post:
+      summary: Generate frontend code
+      description: |
+        Generate React code from uploaded UI design images.
+        Returns a Server-Sent Events (SSE) stream with thinking process and generated code.
+      operationId: generateCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: SSE stream of generation events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stream:
+                  summary: SSE stream example
+                  value: |
+                    data: {"type": "thinking", "content": "Analyzing the UI design..."}
+                    data: {"type": "code", "content": "import React from 'react';"}
+                    data: {"type": "done"}
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session or images not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/chat:
+    post:
+      summary: Chat-based code modification
+      description: |
+        Modify generated code using natural language instructions.
+        Returns a Server-Sent Events (SSE) stream with the updated code.
+      operationId: chatModify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: SSE stream of modification events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                stream:
+                  summary: SSE stream example
+                  value: |
+                    data: {"type": "thinking", "content": "Understanding the modification request..."}
+                    data: {"type": "code", "content": "// Updated code here"}
+                    data: {"type": "done"}
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Session not found or no code to modify
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    UploadResponse:
+      type: object
+      required:
+        - session_id
+        - images
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier for subsequent API calls
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageInfo'
+
+    ImageInfo:
+      type: object
+      required:
+        - id
+        - filename
+        - order
+      properties:
+        id:
+          type: string
+          description: Unique image identifier
+          example: "img_abc123"
+        filename:
+          type: string
+          description: Original filename
+          example: "design-page1.png"
+        order:
+          type: integer
+          description: Image order in sequence (0-indexed)
+          example: 0
+
+    GenerateRequest:
+      type: object
+      required:
+        - session_id
+        - image_ids
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier from upload
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        image_ids:
+          type: array
+          items:
+            type: string
+          description: List of image IDs to use for generation
+          example: ["img_abc123", "img_def456"]
+
+    ChatRequest:
+      type: object
+      required:
+        - session_id
+        - message
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          description: Session identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        message:
+          type: string
+          description: Natural language instruction for code modification
+          example: "把按钮的颜色改成蓝色"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Session not found"
+
+    SSEEvent:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [thinking, code, error, done]
+          description: Event type
+        content:
+          type: string
+          description: Event content (for thinking, code, error types)
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Optional API key for authentication (future use)
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Upload
+    description: Image upload operations
+  - name: Generation
+    description: Code generation operations
+  - name: Chat
+    description: Chat-based code modification

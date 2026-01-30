@@ -1,0 +1,255 @@
+package service
+
+import (
+	"context"
+	"regexp"
+	"strings"
+
+	"multimodal-llm-frontend-generator/internal/gateway"
+	"multimodal-llm-frontend-generator/internal/gateway/types"
+)
+
+// GenerateService handles code generation using LLM
+type GenerateService interface {
+	// Generate generates code from images (streaming)
+	Generate(ctx context.Context, sessionID string, imageIDs []string, framework string) (<-chan SSEEvent, error)
+
+	// Chat modifies code based on natural language instruction (streaming)
+	Chat(ctx context.Context, sessionID string, message string) (<-chan SSEEvent, error)
+}
+
+// generateService implements GenerateService
+type generateService struct {
+	sessionStore  SessionStore
+	promptService PromptService
+	gateway       gateway.LLMGateway
+}
+
+// NewGenerateService creates a new GenerateService
+func NewGenerateService(
+	sessionStore SessionStore,
+	promptService PromptService,
+	gw gateway.LLMGateway,
+) GenerateService {
+	return &generateService{
+		sessionStore:  sessionStore,
+		promptService: promptService,
+		gateway:       gw,
+	}
+}
+
+// ErrNoCodeGenerated is returned when trying to chat without generated code
+type ErrNoCodeGenerated struct{}
+
+func (e *ErrNoCodeGenerated) Error() string {
+	return "no code generated yet, please generate code first"
+}
+
+// Generate generates code from images
+func (s *generateService) Generate(ctx context.Context, sessionID string, imageIDs []string, framework string) (<-chan SSEEvent, error) {
+	// Get session
+	session, err := s.sessionStore.Get(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get images
+	images, err := s.sessionStore.GetImages(ctx, sessionID, imageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update session framework
+	session.Framework = framework
+	s.sessionStore.Update(ctx, session)
+
+	// Build prompt
+	systemPrompt := s.promptService.BuildSystemPrompt(framework)
+	var messages []types.Message
+
+	if len(images) == 2 {
+		// Use diff analysis for exactly 2 images
+		messages = s.promptService.BuildDiffPrompt(images, framework)
+	} else {
+		messages = s.promptService.BuildGeneratePrompt(images, framework)
+	}
+
+	// Create chat request
+	req := &types.ChatRequest{
+		Messages: append(
+			[]types.Message{types.NewTextMessage(types.RoleSystem, systemPrompt)},
+			messages...,
+		),
+	}
+
+	// Call LLM
+	llmChan, err := s.gateway.ChatStream(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create output channel
+	outChan := make(chan SSEEvent)
+
+	// Process LLM output
+	go func() {
+		defer close(outChan)
+		s.processLLMOutput(ctx, sessionID, llmChan, outChan)
+	}()
+
+	return outChan, nil
+}
+
+// Chat modifies code based on natural language instruction
+func (s *generateService) Chat(ctx context.Context, sessionID string, message string) (<-chan SSEEvent, error) {
+	// Get session
+	session, err := s.sessionStore.Get(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if code exists
+	if session.Code == "" {
+		return nil, &ErrNoCodeGenerated{}
+	}
+
+	// Get history (limit to last 10 entries)
+	history, err := s.sessionStore.GetHistory(ctx, sessionID, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build prompt
+	systemPrompt := s.promptService.BuildSystemPrompt(session.Framework)
+	messages := s.promptService.BuildChatPrompt(session.Code, message, history)
+
+	// Create chat request
+	req := &types.ChatRequest{
+		Messages: append(
+			[]types.Message{types.NewTextMessage(types.RoleSystem, systemPrompt)},
+			messages...,
+		),
+	}
+
+	// Add user message to history
+	s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+		Role:    "user",
+		Content: message,
+		Type:    "text",
+	})
+
+	// Call LLM
+	llmChan, err := s.gateway.ChatStream(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create output channel
+	outChan := make(chan SSEEvent)
+
+	// Process LLM output
+	go func() {
+		defer close(outChan)
+		s.processLLMOutput(ctx, sessionID, llmChan, outChan)
+	}()
+
+	return outChan, nil
+}
+
+// processLLMOutput converts LLM chunks to SSE events
+func (s *generateService) processLLMOutput(ctx context.Context, sessionID string, llmChan <-chan types.StreamChunk, outChan chan<- SSEEvent) {
+	var fullContent strings.Builder
+
+	for chunk := range llmChan {
+		select {
+		case <-ctx.Done():
+			outChan <- SSEEvent{Type: SSETypeError, Content: "Request cancelled"}
+			return
+		default:
+		}
+
+		switch chunk.Type {
+		case types.ChunkTypeContent:
+			fullContent.WriteString(chunk.Content)
+			// Determine event type based on content pattern
+			eventType := s.detectContentType(fullContent.String(), chunk.Content)
+			outChan <- SSEEvent{Type: eventType, Content: chunk.Content}
+
+		case types.ChunkTypeError:
+			outChan <- SSEEvent{Type: SSETypeError, Content: chunk.Error.Error()}
+			return
+
+		case types.ChunkTypeDone:
+			// Extract and save code
+			code := s.extractCode(fullContent.String())
+			if code != "" {
+				s.sessionStore.UpdateCode(ctx, sessionID, code)
+				// Add assistant response to history
+				s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+					Role:    "assistant",
+					Content: code,
+					Type:    "code",
+				})
+			}
+			outChan <- SSEEvent{Type: SSETypeDone, Content: ""}
+			return
+		}
+	}
+}
+
+// detectContentType determines if content is thinking or code
+func (s *generateService) detectContentType(fullContent, newContent string) string {
+	// Count code block markers (```) to detect if we're in a code block
+	codeBlockCount := strings.Count(fullContent, "```")
+
+	// If odd number of ```, we're inside a code block (code)
+	if codeBlockCount%2 == 1 {
+		return SSETypeCode
+	}
+
+	// If we have closed code blocks, the rest is thinking
+	if codeBlockCount >= 2 {
+		return SSETypeThinking
+	}
+
+	// Before any code block, it's thinking (analysis text)
+	return SSETypeThinking
+}
+
+// extractCode extracts code from the LLM response
+func (s *generateService) extractCode(content string) string {
+	// Pattern for code blocks: ```html, ```jsx, ```tsx, or just ```
+	codeBlockPattern := regexp.MustCompile("```(?:html|jsx|tsx|javascript|typescript)?\\s*\\n([\\s\\S]*?)\\n```")
+	matches := codeBlockPattern.FindAllStringSubmatch(content, -1)
+
+	var code string
+
+	if len(matches) > 0 {
+		// Return the last code block (most likely the final version)
+		lastMatch := matches[len(matches)-1]
+		if len(lastMatch) > 1 {
+			code = strings.TrimSpace(lastMatch[1])
+		}
+	} else {
+		// No code block found, try to find HTML by looking for DOCTYPE or html tag
+		doctypeIdx := strings.Index(content, "<!DOCTYPE")
+		htmlIdx := strings.Index(content, "<html")
+
+		startIdx := -1
+		if doctypeIdx >= 0 {
+			startIdx = doctypeIdx
+		} else if htmlIdx >= 0 {
+			startIdx = htmlIdx
+		}
+
+		if startIdx >= 0 {
+			code = strings.TrimSpace(content[startIdx:])
+		}
+	}
+
+	// Final cleanup: remove any remaining code block markers
+	code = regexp.MustCompile("^```[\\w]*\\s*\\n?").ReplaceAllString(code, "")
+	code = regexp.MustCompile("\\n?```\\s*$").ReplaceAllString(code, "")
+
+	return strings.TrimSpace(code)
+}
