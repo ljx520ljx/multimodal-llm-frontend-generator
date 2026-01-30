@@ -61,7 +61,6 @@ function cleanCodeContent(code: string): string {
 }
 
 export function useGeneration() {
-  const images = useProjectStore((state) => state.images);
   const setStatus = useProjectStore((state) => state.setStatus);
   const setThinking = useProjectStore((state) => state.setThinking);
   const appendThinking = useProjectStore((state) => state.appendThinking);
@@ -79,7 +78,10 @@ export function useGeneration() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const generate = useCallback(async (promptText?: string) => {
-    if (images.length === 0) {
+    // 使用 getState 获取最新的图片（解决粘贴图片后状态未及时更新的问题）
+    const currentImages = useProjectStore.getState().images;
+
+    if (currentImages.length === 0) {
       setError('请先上传设计稿');
       return;
     }
@@ -91,7 +93,7 @@ export function useGeneration() {
       setThinking('');
 
       // 添加用户消息到对话历史
-      const imagePreviews = images.map((img) => img.preview);
+      const imagePreviews = currentImages.map((img) => img.preview);
       addUserMessage(promptText || '生成交互原型', imagePreviews);
 
       // 添加 AI 消息占位
@@ -101,7 +103,7 @@ export function useGeneration() {
       abortControllerRef.current = new AbortController();
 
       // 1. 上传图片
-      const files = images.map((img) => img.file);
+      const files = currentImages.map((img) => img.file);
 
       // 模拟上传进度
       const progressInterval = setInterval(() => {
@@ -174,7 +176,6 @@ export function useGeneration() {
       setError(message);
     }
   }, [
-    images,
     setStatus,
     setThinking,
     appendThinking,

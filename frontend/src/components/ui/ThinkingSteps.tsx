@@ -17,15 +17,21 @@ interface ThinkingStepsProps {
 // 清理 markdown 格式和表格内容
 function cleanMarkdownContent(text: string): string {
   return text
-    .replace(/\|[^|]*\|/g, '')           // 移除表格单元格
-    .replace(/\|-+\|/g, '')               // 移除表格分隔线
-    .replace(/^[\s|:-]+$/gm, '')          // 移除只包含表格字符的行
-    .replace(/\*\*([^*]+)\*\*/g, '$1')    // 移除粗体
-    .replace(/\*([^*]+)\*/g, '$1')        // 移除斜体
-    .replace(/`([^`]+)`/g, '$1')          // 移除行内代码
-    .replace(/^#+\s*/gm, '')              // 移除标题标记
-    .replace(/^[-*]\s*/gm, '• ')          // 将列表符号统一为 •
-    .replace(/\n{3,}/g, '\n\n')           // 移除多余空行
+    .replace(/```[\w]*[\s\S]*?```/g, '')  // 移除完整代码块
+    .replace(/```[\w]*[\s\S]*$/g, '')     // 移除未闭合的代码块
+    .replace(/```/g, '')                   // 移除孤立的代码块标记
+    .replace(/\|[^|]*\|/g, '')             // 移除表格单元格
+    .replace(/\|-+\|/g, '')                // 移除表格分隔线
+    .replace(/^[\s|:-]+$/gm, '')           // 移除只包含表格字符的行
+    .replace(/\*\*([^*]+)\*\*/g, '$1')     // 移除粗体
+    .replace(/\*([^*]+)\*/g, '$1')         // 移除斜体
+    .replace(/`([^`]+)`/g, '$1')           // 移除行内代码
+    .replace(/^#+\s*/gm, '')               // 移除标题标记
+    .replace(/^[-*]\s*/gm, '• ')           // 将列表符号统一为 •
+    .replace(/下面是.*代码[：:.]*/gi, '')   // 移除过渡语句
+    .replace(/以下是.*代码[：:.]*/gi, '')
+    .replace(/<\/?(html|head|body)[^>]*>/gi, '')  // 移除 HTML 标签残留
+    .replace(/\n{3,}/g, '\n\n')            // 移除多余空行
     .trim();
 }
 

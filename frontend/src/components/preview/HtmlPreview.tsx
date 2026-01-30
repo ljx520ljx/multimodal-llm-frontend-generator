@@ -4,6 +4,15 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { useDebouncedValue } from '@/lib/hooks';
 
+// 元素信息类型
+export interface SelectedElementInfo {
+  selector: string;       // CSS 选择器
+  tagName: string;        // 标签名
+  text: string;           // 文本内容
+  classList: string[];    // class 列表
+  styles: Record<string, string>;  // 关键样式
+}
+
 const DEFAULT_HTML = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -30,9 +39,107 @@ const DEFAULT_HTML = `<!DOCTYPE html>
 interface HtmlPreviewProps {
   onRefresh?: () => void;
   isGenerating?: boolean;
+  annotationMode?: boolean;  // 标注模式
+  onElementSelect?: (info: SelectedElementInfo) => void;  // 元素选中回调
 }
 
-export function HtmlPreview({ onRefresh, isGenerating: _isGenerating = false }: HtmlPreviewProps) {
+// 注入到 iframe 的标注模式脚本
+const ANNOTATION_SCRIPT = `
+<script>
+(function() {
+  let annotationMode = false;
+  let hoveredElement = null;
+
+  // 生成元素的 CSS 选择器
+  function getSelector(el) {
+    if (el.id) return '#' + el.id;
+
+    let path = [];
+    while (el && el.nodeType === Node.ELEMENT_NODE) {
+      let selector = el.tagName.toLowerCase();
+      if (el.className && typeof el.className === 'string') {
+        const classes = el.className.trim().split(/\\s+/).filter(c => c && !c.startsWith('__'));
+        if (classes.length > 0) {
+          selector += '.' + classes.slice(0, 2).join('.');
+        }
+      }
+      path.unshift(selector);
+      if (el.parentElement === document.body || path.length > 3) break;
+      el = el.parentElement;
+    }
+    return path.join(' > ');
+  }
+
+  // 获取元素关键样式
+  function getKeyStyles(el) {
+    const computed = window.getComputedStyle(el);
+    return {
+      color: computed.color,
+      backgroundColor: computed.backgroundColor,
+      fontSize: computed.fontSize,
+      fontWeight: computed.fontWeight,
+      padding: computed.padding,
+      margin: computed.margin,
+      borderRadius: computed.borderRadius,
+    };
+  }
+
+  // 高亮元素
+  function highlightElement(el) {
+    if (hoveredElement) {
+      hoveredElement.style.outline = '';
+      hoveredElement.style.outlineOffset = '';
+    }
+    if (el && el !== document.body && el !== document.documentElement) {
+      el.style.outline = '2px solid #3b82f6';
+      el.style.outlineOffset = '2px';
+      hoveredElement = el;
+    }
+  }
+
+  // 监听来自父页面的消息
+  window.addEventListener('message', function(e) {
+    if (e.data.type === 'setAnnotationMode') {
+      annotationMode = e.data.enabled;
+      if (!annotationMode && hoveredElement) {
+        hoveredElement.style.outline = '';
+        hoveredElement.style.outlineOffset = '';
+        hoveredElement = null;
+      }
+      document.body.style.cursor = annotationMode ? 'crosshair' : '';
+    }
+  });
+
+  // 鼠标移动高亮
+  document.addEventListener('mousemove', function(e) {
+    if (!annotationMode) return;
+    highlightElement(e.target);
+  });
+
+  // 点击选中元素
+  document.addEventListener('click', function(e) {
+    if (!annotationMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const el = e.target;
+    if (el === document.body || el === document.documentElement) return;
+
+    const info = {
+      selector: getSelector(el),
+      tagName: el.tagName.toLowerCase(),
+      text: el.innerText?.slice(0, 100) || '',
+      classList: Array.from(el.classList || []),
+      styles: getKeyStyles(el),
+    };
+
+    window.parent.postMessage({ type: 'elementSelected', info: info }, '*');
+  }, true);
+})();
+</script>
+`;
+
+export function HtmlPreview({ onRefresh, isGenerating: _isGenerating = false, annotationMode = false, onElementSelect }: HtmlPreviewProps) {
   const generatedCode = useProjectStore((state) => state.generatedCode);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -85,6 +192,13 @@ ${finalHtml}
 </html>`;
       }
 
+      // 注入标注模式脚本（在 </body> 前）
+      if (finalHtml.includes('</body>')) {
+        finalHtml = finalHtml.replace('</body>', ANNOTATION_SCRIPT + '</body>');
+      } else {
+        finalHtml += ANNOTATION_SCRIPT;
+      }
+
       // 使用 srcdoc 设置 iframe 内容
       iframeRef.current.srcdoc = finalHtml;
     } catch (err) {
@@ -95,7 +209,29 @@ ${finalHtml}
   // 监听 iframe 加载完成
   const handleLoad = useCallback(() => {
     setIsLoading(false);
-  }, []);
+    // 加载完成后设置标注模式状态
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'setAnnotationMode', enabled: annotationMode }, '*');
+    }
+  }, [annotationMode]);
+
+  // 当标注模式改变时通知 iframe
+  useEffect(() => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'setAnnotationMode', enabled: annotationMode }, '*');
+    }
+  }, [annotationMode]);
+
+  // 监听 iframe 发来的元素选中消息
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      if (e.data.type === 'elementSelected' && onElementSelect) {
+        onElementSelect(e.data.info);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [onElementSelect]);
 
   return (
     <div className="relative h-full w-full flex flex-col" style={{ minHeight: '200px' }}>

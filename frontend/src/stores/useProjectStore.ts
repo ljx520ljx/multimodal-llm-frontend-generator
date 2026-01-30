@@ -50,6 +50,7 @@ interface ProjectState {
   updateCss: (css: string) => void;
   setError: (message: string) => void;
   reset: () => void;
+  startNewProject: () => void;  // 完全重置，开始新原型
 
   // 图片ID操作
   setImageIds: (ids: string[]) => void;
@@ -136,6 +137,11 @@ export const useProjectStore = create<ProjectState>()(
           errorMessage: null,
           activeFile: 'App.tsx',
           chatMessages: [],
+        }),
+      startNewProject: () =>
+        set({
+          ...initialState,
+          // 清空所有状态，开始新原型
         }),
 
       // 图片ID操作

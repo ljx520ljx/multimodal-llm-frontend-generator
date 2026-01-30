@@ -27,9 +27,17 @@ export function InteractionPanel() {
   const { sendMessage } = useChat();
 
   const addAssistantMessage = useProjectStore((state) => state.addAssistantMessage);
+  const startNewProject = useProjectStore((state) => state.startNewProject);
 
   const isProcessing = status === 'uploading' || status === 'generating';
   const hasCode = !!generatedCode?.code;
+
+  // 开始新原型
+  const handleNewProject = useCallback(() => {
+    if (window.confirm('确定要开始新原型吗？当前的原型和对话记录将被清空。')) {
+      startNewProject();
+    }
+  }, [startNewProject]);
 
   // 处理发送
   const handleSend = useCallback(
@@ -84,32 +92,41 @@ export function InteractionPanel() {
     <div className="flex h-full flex-col bg-slate-50">
       {/* 标题 */}
       <div className="border-b border-slate-200 bg-white p-4">
-        <h2 className="font-semibold text-slate-900">设计稿上传</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-slate-900">设计稿上传</h2>
+          {hasCode && !isProcessing && (
+            <button
+              onClick={handleNewProject}
+              className="flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-100 transition-colors"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 4v16m8-8H4" />
+              </svg>
+              新建原型
+            </button>
+          )}
+        </div>
         <p className="mt-1 text-xs text-slate-500">
-          上传 UI 设计稿序列，系统将自动推断交互逻辑
+          {hasCode
+            ? '输入描述修改当前原型，或点击"新建原型"重新开始'
+            : '上传 UI 设计稿序列，系统将自动推断交互逻辑'}
         </p>
       </div>
 
-      {/* 上传区域 */}
-      <div className="border-b border-slate-200 bg-white p-3">
-        <ImageDropzone disabled={isProcessing} />
-      </div>
-
-      {/* 已上传图片（横向列表） */}
-      {images.length > 0 && (
+      {/* 上传区域（仅在未生成原型时显示） */}
+      {!hasCode && (
         <div className="border-b border-slate-200 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between">
+          <ImageDropzone disabled={isProcessing} />
+        </div>
+      )}
+
+      {/* 已上传图片（仅在未生成原型时显示） */}
+      {!hasCode && images.length > 0 && (
+        <div className="border-b border-slate-200 bg-white p-3">
+          <div className="mb-2">
             <span className="text-xs font-medium text-slate-600">
               已上传 {images.length} 张图片
             </span>
-            {!isProcessing && (
-              <button
-                onClick={clearImages}
-                className="text-xs text-slate-400 hover:text-red-500"
-              >
-                清空全部
-              </button>
-            )}
           </div>
           <ImageList layout="horizontal" />
         </div>

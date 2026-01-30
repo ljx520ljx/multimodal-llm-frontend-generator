@@ -33,20 +33,31 @@ interface ParsedContent {
   thinkingContent: string;
   mainContent: string;
   hasCode: boolean;
+  isGeneratingCode: boolean;  // 正在生成代码（代码块未闭合）
 }
 
 // 解析消息内容，分离思考部分，过滤代码
 function parseContent(content: string): ParsedContent {
-  // 检查是否有代码（代码块或裸露的 HTML）
-  const hasCodeBlock = /```[\s\S]*?```/.test(content);
+  // 检查是否有完整的代码块
+  const hasCompleteCodeBlock = /```[\s\S]*?```/.test(content);
   const hasHtmlCode = /<!DOCTYPE|<html|<head|<body/.test(content);
-  const hasCode = hasCodeBlock || hasHtmlCode;
+  const hasCode = hasCompleteCodeBlock || hasHtmlCode;
+
+  // 检测是否正在生成代码（有代码块开始但未闭合，或有 HTML 但未结束）
+  const codeBlockStarts = (content.match(/```/g) || []).length;
+  const hasUnclosedCodeBlock = codeBlockStarts % 2 === 1;  // 奇数个 ``` 表示未闭合
+  const hasUnclosedHtml = hasHtmlCode && !content.includes('</html>');
+  const isGeneratingCode = hasUnclosedCodeBlock || hasUnclosedHtml;
 
   // 移除所有代码内容
   let textContent = content;
 
-  // 1. 移除 markdown 代码块
+  // 1. 移除 markdown 代码块（包括未闭合的）
   textContent = textContent.replace(/```[\w]*\s*[\s\S]*?```/g, '');
+  // 移除未闭合的代码块开始标记及其后内容
+  textContent = textContent.replace(/```[\w]*[\s\S]*$/g, '');
+  // 移除孤立的代码块标记
+  textContent = textContent.replace(/```/g, '');
 
   // 2. 移除裸露的 HTML 代码（从 <!DOCTYPE 或 <html 开始到结尾）
   const doctypeIndex = textContent.indexOf('<!DOCTYPE');
@@ -59,7 +70,17 @@ function parseContent(content: string): ParsedContent {
     textContent = textContent.substring(0, codeStartIndex);
   }
 
-  // 3. 移除状态前缀
+  // 3. 移除残留的 HTML 标签
+  textContent = textContent.replace(/<\/?(html|head|body|div|script|style)[^>]*>/gi, '');
+
+  // 4. 移除 AI 常见的过渡语句
+  textContent = textContent
+    .replace(/下面是.*代码[：:.]*/gi, '')
+    .replace(/以下是.*代码[：:.]*/gi, '')
+    .replace(/完整代码如下[：:.]*/gi, '')
+    .replace(/代码如下[：:.]*/gi, '');
+
+  // 5. 移除状态前缀
   textContent = textContent
     .replace(/^🔄\s*正在生成代码[^\n]*\n*/gm, '')
     .replace(/^✅\s*代码生成完毕[^\n]*\n*/gm, '')
@@ -79,6 +100,7 @@ function parseContent(content: string): ParsedContent {
       thinkingContent: thinkingMatch[0],
       mainContent,
       hasCode,
+      isGeneratingCode,
     };
   }
 
@@ -90,6 +112,7 @@ function parseContent(content: string): ParsedContent {
       thinkingContent: textContent,
       mainContent: '',
       hasCode,
+      isGeneratingCode,
     };
   }
 
@@ -104,6 +127,7 @@ function parseContent(content: string): ParsedContent {
       thinkingContent: '',
       mainContent: textContent,
       hasCode,
+      isGeneratingCode,
     };
   }
 
@@ -112,6 +136,7 @@ function parseContent(content: string): ParsedContent {
     thinkingContent: textContent,
     mainContent: '',
     hasCode,
+    isGeneratingCode,
   };
 }
 
@@ -219,6 +244,17 @@ function AssistantMessage({ message, isStreaming }: { message: ChatMessage; isSt
               <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-slate-400" />
             )}
           </p>
+        )}
+
+        {/* 正在生成代码状态 */}
+        {isStreaming && parsed.isGeneratingCode && (
+          <div className="flex items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-700">
+            <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+              <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+            </svg>
+            正在生成代码...
+          </div>
         )}
 
         {/* 代码生成成功提示（当没有其他消息时） */}
