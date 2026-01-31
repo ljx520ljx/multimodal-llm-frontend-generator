@@ -48,6 +48,10 @@ type Config struct {
 
 	// Session
 	SessionTTL time.Duration // Session expiration time (default 30 minutes)
+
+	// Agent Service (Python)
+	AgentServiceURL string        // Agent service URL (default http://localhost:8081)
+	AgentTimeout    time.Duration // Agent service timeout (default 60s)
 }
 
 func Load() *Config {
@@ -78,6 +82,10 @@ func Load() *Config {
 	// Session defaults
 	viper.SetDefault("SESSION_TTL", "30m")
 
+	// Agent service defaults
+	viper.SetDefault("AGENT_SERVICE_URL", "http://localhost:8081")
+	viper.SetDefault("AGENT_TIMEOUT", "60s")
+
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("No .env file found, using environment variables and defaults")
 	}
@@ -96,6 +104,11 @@ func Load() *Config {
 	sessionTTL, err := time.ParseDuration(viper.GetString("SESSION_TTL"))
 	if err != nil {
 		sessionTTL = 30 * time.Minute
+	}
+
+	agentTimeout, err := time.ParseDuration(viper.GetString("AGENT_TIMEOUT"))
+	if err != nil {
+		agentTimeout = 60 * time.Second
 	}
 
 	// Parse allowed image types
@@ -135,6 +148,9 @@ func Load() *Config {
 		ImageAllowedTypes: allowedTypes,
 
 		SessionTTL: sessionTTL,
+
+		AgentServiceURL: viper.GetString("AGENT_SERVICE_URL"),
+		AgentTimeout:    agentTimeout,
 	}
 }
 

@@ -21,6 +21,7 @@ type App struct {
 	PromptService   service.PromptService
 	GenerateService service.GenerateService
 	Gateway         gateway.LLMGateway
+	AgentClient     service.AgentClient
 }
 
 // New creates and initializes the application
@@ -85,6 +86,12 @@ func (a *App) initServices() error {
 		a.Gateway,
 	)
 
+	// Agent client (for Python Agent service)
+	a.AgentClient = service.NewAgentClient(
+		a.Config.AgentServiceURL,
+		a.Config.AgentTimeout,
+	)
+
 	return nil
 }
 
@@ -121,6 +128,11 @@ func (a *App) initRouter() {
 		// Chat handler
 		chatHandler := handler.NewChatHandler(a.GenerateService)
 		api.POST("/chat", chatHandler.Handle)
+
+		// Echo handler (for testing Go ↔ Python communication)
+		echoHandler := handler.NewEchoHandler(a.AgentClient)
+		api.POST("/echo", echoHandler.Handle)
+		api.GET("/agent-health", echoHandler.HealthCheck)
 	}
 
 	a.Router = r

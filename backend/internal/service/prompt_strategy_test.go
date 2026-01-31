@@ -127,7 +127,7 @@ func TestPromptBuilder_BuildChatPrompt(t *testing.T) {
 	message := "把文字改成红色"
 	history := []HistoryEntry{}
 
-	messages := builder.BuildChatPrompt(code, message, history)
+	messages := builder.BuildChatPrompt(code, message, history, nil)
 
 	if len(messages) != 1 {
 		t.Errorf("Expected 1 message (no history), got %d", len(messages))
@@ -143,7 +143,7 @@ func TestPromptBuilder_BuildChatPrompt_WithHistory(t *testing.T) {
 		{Role: "assistant", Content: code, Type: "code"},
 	}
 
-	messages := builder.BuildChatPrompt(code, message, history)
+	messages := builder.BuildChatPrompt(code, message, history, nil)
 
 	// Should include history + current message
 	if len(messages) != 3 {

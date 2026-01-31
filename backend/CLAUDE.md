@@ -5,7 +5,7 @@
 
 ## 模块概述
 
-基于 Go + Gin 的后端服务，负责图片处理、Prompt 构建、LLM API 调用及代码后处理。
+基于 Go + Gin 的后端服务，作为"门面"负责 HTTP 网关、SSE 流式转发、会话管理、图片处理，并调用 Python Agent 服务。
 
 ## 架构设计
 
@@ -63,11 +63,17 @@ backend/
 - **ImageService**: 图片压缩、格式转换、Base64 编码
 - **PromptService**: 构建多模态 Prompt，管理对话上下文
 - **CodeService**: 代码格式化、语法校验、后处理
+- **AgentClient**: Python Agent 服务通信客户端（SSE 流式）
 
 ### 3. Gateway 层 (`internal/gateway`)
-- 封装 LLM API 调用
+- 封装 LLM API 调用（当前使用，后续迁移到 Python）
 - 处理认证、重试、限流
 - 流式响应转发
+
+### 4. Agent 通信 (`internal/service/agent_client.go`)
+- Go ↔ Python Agent 通信
+- SSE 流式响应解析
+- 健康检查
 
 ## API 设计
 

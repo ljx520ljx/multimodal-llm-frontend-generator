@@ -111,7 +111,7 @@ func TestPromptService_BuildChatPrompt(t *testing.T) {
 		{Role: "assistant", Content: "之前的回复", Type: "text"},
 	}
 
-	messages := service.BuildChatPrompt(code, message, history)
+	messages := service.BuildChatPrompt(code, message, history, nil)
 
 	// Should have 2 history entries + 1 current request
 	if len(messages) != 3 {
@@ -139,7 +139,7 @@ func TestPromptService_BuildChatPrompt_NoHistory(t *testing.T) {
 	code := "export default function App() { return <div>Hello</div> }"
 	message := "添加一个按钮"
 
-	messages := service.BuildChatPrompt(code, message, nil)
+	messages := service.BuildChatPrompt(code, message, nil, nil)
 
 	if len(messages) != 1 {
 		t.Errorf("expected 1 message, got %d", len(messages))

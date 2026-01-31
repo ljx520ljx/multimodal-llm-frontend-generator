@@ -26,7 +26,9 @@ agent-core/
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI 入口
 │   ├── config.py               # 配置管理
-│   └── routes/                 # API 路由（Phase 2+）
+│   └── routes/
+│       ├── __init__.py
+│       └── echo.py             # Echo 测试接口 (Phase 2)
 │
 ├── agents/                     # Agent 实现（Phase 3+）
 │   ├── base.py                 # Agent 基类
@@ -72,6 +74,27 @@ agent-core/
 ```
 GET /health
 Response: {"status": "ok"}
+```
+
+### Echo 测试（Phase 2）
+
+```
+POST /api/v1/echo
+Content-Type: application/json
+
+Request:
+{
+    "message": "hello",
+    "count": 5,
+    "delay": 0.5
+}
+
+Response (SSE):
+event: message
+data: {"index": 0, "message": "hello", "total": 5}
+...
+event: done
+data: {}
 ```
 
 ### 首次生成（Phase 4+）
@@ -158,7 +181,7 @@ docker run -p 8081:8081 agent-core
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | Phase 1 | 项目骨架、健康检查 | ✅ 完成 |
-| Phase 2 | Go ↔ Python 通信 | 待开发 |
+| Phase 2 | Go ↔ Python 通信 | ✅ 完成 |
 | Phase 3 | 单 Agent 验证 | 待开发 |
 | Phase 4 | 完整 Pipeline | 待开发 |
 | Phase 5 | ChatAgent + 工具 | 待开发 |
