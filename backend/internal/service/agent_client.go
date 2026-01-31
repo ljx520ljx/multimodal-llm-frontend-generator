@@ -17,6 +17,9 @@ type AgentClient interface {
 	// Echo sends an echo request and returns SSE events (for testing)
 	Echo(ctx context.Context, req *EchoRequest) (<-chan SSEEvent, error)
 
+	// Generate sends a generate request and returns SSE events
+	Generate(ctx context.Context, req *AgentGenerateRequest) (<-chan SSEEvent, error)
+
 	// Health checks if the agent service is healthy
 	Health(ctx context.Context) error
 }
@@ -26,6 +29,13 @@ type EchoRequest struct {
 	Message string  `json:"message"`
 	Count   int     `json:"count"`
 	Delay   float64 `json:"delay,omitempty"`
+}
+
+// AgentGenerateRequest represents a request to the generate endpoint
+type AgentGenerateRequest struct {
+	SessionID string                   `json:"session_id"`
+	Images    []map[string]interface{} `json:"images"`
+	Options   map[string]interface{}   `json:"options,omitempty"`
 }
 
 // agentClient implements AgentClient
@@ -185,6 +195,10 @@ func (c *agentClient) parseSSEData(eventType, data string) SSEEvent {
 		return SSEEvent{Type: SSETypeThinking, Content: data}
 	case "code":
 		return SSEEvent{Type: SSETypeCode, Content: data}
+	case "agent_start":
+		return SSEEvent{Type: SSETypeThinking, Content: data}
+	case "agent_result":
+		return SSEEvent{Type: SSETypeThinking, Content: data}
 	default:
 		// For unknown event types, treat as thinking
 		if eventType != "" {
@@ -192,4 +206,44 @@ func (c *agentClient) parseSSEData(eventType, data string) SSEEvent {
 		}
 		return SSEEvent{}
 	}
+}
+
+// Generate sends a generate request and returns SSE events
+func (c *agentClient) Generate(ctx context.Context, req *AgentGenerateRequest) (<-chan SSEEvent, error) {
+	// Create request body
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/generate", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	// Send request
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to agent service: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("agent service error: status %d", resp.StatusCode)
+	}
+
+	// Create output channel
+	outChan := make(chan SSEEvent)
+
+	// Process SSE stream in background
+	go func() {
+		defer close(outChan)
+		defer resp.Body.Close()
+		c.processSSEStream(ctx, resp.Body, outChan)
+	}()
+
+	return outChan, nil
 }

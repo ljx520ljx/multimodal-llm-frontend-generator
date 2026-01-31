@@ -14,14 +14,15 @@ import (
 
 // App holds all application dependencies
 type App struct {
-	Config          *config.Config
-	Router          *gin.Engine
-	SessionStore    service.SessionStore
-	ImageService    service.ImageService
-	PromptService   service.PromptService
-	GenerateService service.GenerateService
-	Gateway         gateway.LLMGateway
-	AgentClient     service.AgentClient
+	Config               *config.Config
+	Router               *gin.Engine
+	SessionStore         service.SessionStore
+	ImageService         service.ImageService
+	PromptService        service.PromptService
+	GenerateService      service.GenerateService
+	AgentGenerateService service.AgentGenerateService
+	Gateway              gateway.LLMGateway
+	AgentClient          service.AgentClient
 }
 
 // New creates and initializes the application
@@ -92,6 +93,12 @@ func (a *App) initServices() error {
 		a.Config.AgentTimeout,
 	)
 
+	// Agent generate service (uses Python Agent for multi-agent pipeline)
+	a.AgentGenerateService = service.NewAgentGenerateService(
+		a.SessionStore,
+		a.AgentClient,
+	)
+
 	return nil
 }
 
@@ -133,6 +140,10 @@ func (a *App) initRouter() {
 		echoHandler := handler.NewEchoHandler(a.AgentClient)
 		api.POST("/echo", echoHandler.Handle)
 		api.GET("/agent-health", echoHandler.HealthCheck)
+
+		// Agent generate handler (multi-agent pipeline via Python)
+		agentGenerateHandler := handler.NewAgentGenerateHandler(a.AgentGenerateService)
+		api.POST("/agent/generate", agentGenerateHandler.Handle)
 	}
 
 	a.Router = r

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import echo
+from app.routes import echo, generate
 
 # Configure logging
 settings = get_settings()
@@ -64,3 +64,4 @@ async def root():
 
 # Register routers
 app.include_router(echo.router)
+app.include_router(generate.router, prefix="/api/v1", tags=["generate"])
