@@ -1,7 +1,7 @@
 """Unified LLM Gateway supporting multiple providers."""
 
 import logging
-from typing import Any, AsyncIterator, Type
+from typing import Any, AsyncIterator, Optional, Type
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -36,7 +36,7 @@ class LLMGateway:
         provider: str,
         api_key: str,
         model: str,
-        base_url: str | None = None,
+        base_url: Optional[str] = None,
         temperature: float = 0.7,
     ):
         self.provider = provider.lower()
@@ -50,7 +50,7 @@ class LLMGateway:
         provider: str,
         api_key: str,
         model: str,
-        base_url: str | None,
+        base_url: Optional[str],
         temperature: float,
     ) -> BaseChatModel:
         """Create the appropriate LangChain client."""

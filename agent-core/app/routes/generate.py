@@ -2,9 +2,9 @@
 
 import json
 import logging
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -33,8 +33,8 @@ class GenerateResponse(BaseModel):
     """Non-streaming response for generate endpoint."""
 
     success: bool
-    html: str | None = None
-    error: str | None = None
+    html: Optional[str] = None
+    error: Optional[str] = None
 
 
 async def event_generator(
@@ -89,7 +89,6 @@ def format_sse(event: SSEEvent) -> str:
 @router.post("/generate")
 async def generate(
     request: GenerateRequest,
-    llm: LLMGateway = Depends(get_llm_gateway),
 ) -> StreamingResponse:
     """Generate code from design images.
 
@@ -111,8 +110,19 @@ async def generate(
     """
     logger.info(f"Generate request: session={request.session_id}, images={len(request.images)}")
 
+    # Validate images first before initializing LLM
     if not request.images:
         raise HTTPException(status_code=400, detail="At least one image is required")
+
+    # Get LLM gateway after validation
+    try:
+        llm = get_llm_gateway()
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM gateway: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"LLM service unavailable: {str(e)}. Please configure API key."
+        )
 
     return StreamingResponse(
         event_generator(
@@ -133,7 +143,6 @@ async def generate(
 @router.post("/generate/sync", response_model=GenerateResponse)
 async def generate_sync(
     request: GenerateRequest,
-    llm: LLMGateway = Depends(get_llm_gateway),
 ) -> GenerateResponse:
     """Generate code synchronously (non-streaming).
 
@@ -142,8 +151,19 @@ async def generate_sync(
     """
     logger.info(f"Generate sync request: session={request.session_id}")
 
+    # Validate images first before initializing LLM
     if not request.images:
         raise HTTPException(status_code=400, detail="At least one image is required")
+
+    # Get LLM gateway after validation
+    try:
+        llm = get_llm_gateway()
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM gateway: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"LLM service unavailable: {str(e)}. Please configure API key."
+        )
 
     try:
         # Create and run workflow with injected LLM gateway

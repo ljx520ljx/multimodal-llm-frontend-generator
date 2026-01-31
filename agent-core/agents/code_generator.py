@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import AsyncIterator, Type
+from typing import AsyncIterator, Optional, Type
 
 from pydantic import BaseModel
 
@@ -28,10 +28,10 @@ class CodeGeneratorAgent(BaseAgent):
 
     def build_prompt(
         self,
-        layout_info: LayoutInfo | None = None,
-        component_info: ComponentList | None = None,
-        interaction_info: InteractionSpec | None = None,
-        validation_errors: list[str] | None = None,
+        layout_info: Optional[LayoutInfo] = None,
+        component_info: Optional[ComponentList] = None,
+        interaction_info: Optional[InteractionSpec] = None,
+        validation_errors: Optional[list[str]] = None,
         **kwargs,
     ) -> str:
         """Build the code generation prompt.
@@ -80,7 +80,7 @@ class CodeGeneratorAgent(BaseAgent):
 
     async def run(
         self,
-        images: list[dict] | None = None,
+        images: Optional[list[dict]] = None,
         stream_events: bool = True,
         **kwargs,
     ) -> AsyncIterator[SSEEvent]:

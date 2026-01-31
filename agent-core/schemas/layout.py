@@ -34,3 +34,7 @@ class LayoutSchema(BaseModel):
         default="",
         description="Brief description of the layout"
     )
+
+
+# Alias for backward compatibility
+LayoutInfo = LayoutSchema

@@ -1,7 +1,7 @@
 """Code Validator Tool - Validates generated HTML code."""
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
@@ -291,7 +291,7 @@ class CodeValidator:
     def validate_full(
         self,
         html: str,
-        interaction_spec: "InteractionSpec | None" = None,
+        interaction_spec: "Optional[InteractionSpec]" = None,
     ) -> ValidationResult:
         """Run full validation including state machine checks.
 

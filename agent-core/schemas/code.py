@@ -1,6 +1,6 @@
 """Code generation and validation schemas."""
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -9,8 +9,8 @@ class GeneratedCode(BaseModel):
     """Generated code result."""
 
     html: str = Field(description="Complete HTML code with Tailwind CSS and Alpine.js")
-    css: str | None = Field(default=None, description="Optional separate CSS (usually None, styles in Tailwind)")
-    js: str | None = Field(default=None, description="Optional separate JS (usually None, logic in Alpine.js)")
+    css: Optional[str] = Field(default=None, description="Optional separate CSS (usually None, styles in Tailwind)")
+    js: Optional[str] = Field(default=None, description="Optional separate JS (usually None, logic in Alpine.js)")
 
     @property
     def code(self) -> str:
@@ -25,7 +25,7 @@ class ValidationError(BaseModel):
         description="Error type"
     )
     message: str = Field(description="Error message")
-    line: int | None = Field(default=None, description="Line number if applicable")
+    line: Optional[int] = Field(default=None, description="Line number if applicable")
     suggestion: str = Field(default="", description="Suggested fix")
 
 

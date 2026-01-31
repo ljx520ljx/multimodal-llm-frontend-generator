@@ -1,7 +1,7 @@
 """Base agent class for all pipeline agents."""
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator, Type
+from typing import Any, AsyncIterator, Optional, Type
 
 from pydantic import BaseModel
 
@@ -55,7 +55,7 @@ class BaseAgent(ABC):
 
     async def run(
         self,
-        images: list[dict] | None = None,
+        images: Optional[list[dict]] = None,
         stream_events: bool = True,
         **kwargs,
     ) -> AsyncIterator[SSEEvent]:
@@ -114,7 +114,7 @@ class BaseAgent(ABC):
     def _build_messages(
         self,
         prompt: str,
-        images: list[dict] | None = None,
+        images: Optional[list[dict]] = None,
     ) -> list[dict]:
         """Build message list for LLM call.
 
@@ -149,6 +149,6 @@ class BaseAgent(ABC):
         return [{"role": "user", "content": content}]
 
     @property
-    def last_result(self) -> BaseModel | None:
+    def last_result(self) -> Optional[BaseModel]:
         """Get the last result from this agent."""
         return getattr(self, "_last_result", None)

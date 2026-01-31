@@ -1,7 +1,7 @@
 """Interaction Infer Agent - Infers interaction logic and builds state machine."""
 
 import json
-from typing import Type
+from typing import Optional, Type
 
 from pydantic import BaseModel
 
@@ -25,8 +25,8 @@ class InteractionInferAgent(BaseAgent):
 
     def build_prompt(
         self,
-        layout_info: LayoutInfo | None = None,
-        component_info: ComponentList | None = None,
+        layout_info: Optional[LayoutInfo] = None,
+        component_info: Optional[ComponentList] = None,
         **kwargs,
     ) -> str:
         """Build the interaction inference prompt.

@@ -1,7 +1,7 @@
 """Generate workflow using LangGraph StateGraph."""
 
 import logging
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator, Callable, Optional
 
 from langgraph.graph import END, StateGraph
 
@@ -186,7 +186,7 @@ class GenerateWorkflow:
         self,
         session_id: str,
         images: list[dict[str, Any]],
-        options: dict[str, Any] | None = None,
+        options: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator[SSEEvent]:
         """Run the generation workflow with SSE streaming.
 

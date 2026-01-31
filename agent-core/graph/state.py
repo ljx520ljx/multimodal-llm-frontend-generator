@@ -1,6 +1,6 @@
 """Pipeline state definition for LangGraph workflow."""
 
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
 
 from schemas.code import GeneratedCode
 from schemas.component import ComponentList
@@ -21,10 +21,10 @@ class PipelineState(TypedDict, total=False):
     options: dict[str, Any]  # Generation options
 
     # Agent outputs
-    layout_info: LayoutInfo | None
-    component_info: ComponentList | None
-    interaction_info: InteractionSpec | None
-    generated_code: GeneratedCode | None
+    layout_info: Optional[LayoutInfo]
+    component_info: Optional[ComponentList]
+    interaction_info: Optional[InteractionSpec]
+    generated_code: Optional[GeneratedCode]
 
     # Validation state
     validation_errors: list[str]
@@ -32,6 +32,6 @@ class PipelineState(TypedDict, total=False):
     max_retries: int
 
     # Final output
-    final_html: str | None
+    final_html: Optional[str]
     success: bool
-    error: str | None
+    error: Optional[str]

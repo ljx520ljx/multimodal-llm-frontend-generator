@@ -1,7 +1,7 @@
 """Component Detector Agent - Identifies UI components from design images."""
 
 import json
-from typing import Type
+from typing import Optional, Type
 
 from pydantic import BaseModel
 
@@ -22,7 +22,7 @@ class ComponentDetectorAgent(BaseAgent):
     def description(self) -> str:
         return "识别设计稿中的所有 UI 组件，包括按钮、输入框、导航等"
 
-    def build_prompt(self, layout_info: LayoutInfo | None = None, **kwargs) -> str:
+    def build_prompt(self, layout_info: Optional[LayoutInfo] = None, **kwargs) -> str:
         """Build the component detection prompt.
 
         Args:
