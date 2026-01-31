@@ -41,7 +41,8 @@ func (b *PromptBuilder) BuildGeneratePrompt(images []ImageData, framework string
 }
 
 // BuildChatPrompt builds the prompt for chat-based code modification
-func (b *PromptBuilder) BuildChatPrompt(code string, message string, history []HistoryEntry) []types.Message {
+// images: 原始设计稿图片，用于 AI 参考进行精修
+func (b *PromptBuilder) BuildChatPrompt(code string, message string, history []HistoryEntry, images []ImageData) []types.Message {
 	var messages []types.Message
 
 	// Add history entries
@@ -57,9 +58,43 @@ func (b *PromptBuilder) BuildChatPrompt(code string, message string, history []H
 
 	// Use HTML chat prompt
 	userPrompt := prompt.BuildChatModifyPromptHTML(code, message)
-	messages = append(messages, types.NewTextMessage(types.RoleUser, userPrompt))
+
+	// If we have original design images, include them for reference
+	if len(images) > 0 {
+		// Build message with images for better visual reference
+		messages = append(messages, buildChatMessageWithImages(userPrompt, images))
+	} else {
+		messages = append(messages, types.NewTextMessage(types.RoleUser, userPrompt))
+	}
 
 	return messages
+}
+
+// buildChatMessageWithImages creates a chat message with original design images for reference
+func buildChatMessageWithImages(text string, images []ImageData) types.Message {
+	parts := make([]types.ContentPart, 0, len(images)+1)
+
+	// Add text part first
+	parts = append(parts, types.ContentPart{
+		Type: types.ContentTypeText,
+		Text: text + "\n\n[以下是原始设计稿图片，请参考进行精修]",
+	})
+
+	// Add image parts
+	for _, img := range images {
+		parts = append(parts, types.ContentPart{
+			Type: types.ContentTypeImageURL,
+			ImageURL: &types.ImageURL{
+				URL:    img.Base64, // Already in data:image/...;base64,... format
+				Detail: "high",
+			},
+		})
+	}
+
+	return types.Message{
+		Role:    types.RoleUser,
+		Content: parts,
+	}
 }
 
 // BuildDiffPrompt builds the prompt for diff analysis (multi-image)

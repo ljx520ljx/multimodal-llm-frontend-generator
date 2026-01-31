@@ -116,8 +116,22 @@ const ANNOTATION_SCRIPT = `
     highlightElement(e.target);
   });
 
-  // 点击选中元素
+  // 拦截所有链接点击，防止 iframe 内导航
   document.addEventListener('click', function(e) {
+    const link = e.target.closest('a[href]');
+    if (link) {
+      const href = link.getAttribute('href');
+      // 阻止外部链接和锚点链接导航
+      if (href && (href.startsWith('http') || href.startsWith('/') || href.startsWith('#'))) {
+        e.preventDefault();
+        // 如果不是标注模式，可以提示用户
+        if (!annotationMode) {
+          console.log('链接已禁用（原型预览模式）:', href);
+        }
+      }
+    }
+
+    // 标注模式：选中元素
     if (!annotationMode) return;
     e.preventDefault();
     e.stopPropagation();

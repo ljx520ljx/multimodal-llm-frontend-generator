@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log"
 	"regexp"
 	"strings"
 
@@ -74,12 +75,15 @@ func (s *generateService) Generate(ctx context.Context, sessionID string, imageI
 		messages = s.promptService.BuildGeneratePrompt(images, framework)
 	}
 
-	// Create chat request
+	// Create chat request with larger max_tokens for complex pages
 	req := &types.ChatRequest{
 		Messages: append(
 			[]types.Message{types.NewTextMessage(types.RoleSystem, systemPrompt)},
 			messages...,
 		),
+		Options: &types.ChatOptions{
+			MaxTokens: 8192, // Claude 3.5 Sonnet 的最大限制
+		},
 	}
 
 	// Call LLM
@@ -119,16 +123,20 @@ func (s *generateService) Chat(ctx context.Context, sessionID string, message st
 		return nil, err
 	}
 
-	// Build prompt
+	// Build prompt with original images for reference
+	log.Printf("[Chat] Session %s has %d images for reference", sessionID, len(session.Images))
 	systemPrompt := s.promptService.BuildSystemPrompt(session.Framework)
-	messages := s.promptService.BuildChatPrompt(session.Code, message, history)
+	messages := s.promptService.BuildChatPrompt(session.Code, message, history, session.Images)
 
-	// Create chat request
+	// Create chat request with larger max_tokens
 	req := &types.ChatRequest{
 		Messages: append(
 			[]types.Message{types.NewTextMessage(types.RoleSystem, systemPrompt)},
 			messages...,
 		),
+		Options: &types.ChatOptions{
+			MaxTokens: 8192,
+		},
 	}
 
 	// Add user message to history

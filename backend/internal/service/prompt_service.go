@@ -15,7 +15,8 @@ type PromptService interface {
 	BuildGeneratePrompt(images []ImageData, framework string) []types.Message
 
 	// BuildChatPrompt builds the prompt for chat-based code modification
-	BuildChatPrompt(code string, message string, history []HistoryEntry) []types.Message
+	// images: 原始设计稿图片，用于 AI 参考进行精修
+	BuildChatPrompt(code string, message string, history []HistoryEntry, images []ImageData) []types.Message
 
 	// BuildDiffPrompt builds the prompt for diff analysis (multi-image)
 	BuildDiffPrompt(images []ImageData, framework string) []types.Message
@@ -58,8 +59,9 @@ func (s *promptService) BuildGeneratePrompt(images []ImageData, framework string
 }
 
 // BuildChatPrompt builds the prompt for chat-based code modification
-func (s *promptService) BuildChatPrompt(code string, message string, history []HistoryEntry) []types.Message {
-	return s.builder.BuildChatPrompt(code, message, history)
+// images: 原始设计稿图片，用于 AI 参考进行精修
+func (s *promptService) BuildChatPrompt(code string, message string, history []HistoryEntry, images []ImageData) []types.Message {
+	return s.builder.BuildChatPrompt(code, message, history, images)
 }
 
 // BuildDiffPrompt builds the prompt for diff analysis (multi-image)
