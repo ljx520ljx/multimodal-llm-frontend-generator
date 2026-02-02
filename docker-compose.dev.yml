@@ -1,0 +1,68 @@
+# 开发模式 - 一键启动，无需构建
+# 使用: docker compose -f docker-compose.dev.yml up -d
+
+services:
+  # Frontend (Next.js) - 开发模式
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # 避免覆盖 node_modules
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  # Go Backend - 开发模式
+  backend:
+    image: golang:1.21-alpine
+    working_dir: /app
+    command: sh -c "go mod download && go run cmd/server/main.go"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+    environment:
+      - SERVER_PORT=8080
+      - SERVER_MODE=development
+      - ALLOWED_ORIGINS=http://localhost:3000
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - AGENT_SERVICE_URL=http://agent:8081
+      - AGENT_TIMEOUT=30s
+    depends_on:
+      - agent
+    networks:
+      - app-network
+
+  # Python Agent - 开发模式
+  agent:
+    image: python:3.11-slim
+    working_dir: /app
+    command: sh -c "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8081 --reload"
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./agent-core:/app
+    environment:
+      - AGENT_PORT=8081
+      - LOG_LEVEL=INFO
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - CHAT_AGENT_MODEL=${CHAT_AGENT_MODEL:-}
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

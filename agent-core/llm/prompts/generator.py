@@ -34,7 +34,7 @@ CODE_GENERATOR_PROMPT = """你是一位专业的前端开发工程师。请根�
 </head>
 <body>
     <!-- 使用 Alpine.js 状态机 -->
-    <div x-data="{ currentState: '初始状态ID' }">
+    <div x-data="{{ currentState: '初始状态ID' }}">
         <!-- 各状态的内容 -->
     </div>
 </body>

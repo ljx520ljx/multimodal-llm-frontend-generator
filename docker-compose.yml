@@ -1,54 +1,72 @@
-version: '3.8'
-
 services:
-  # Backend service
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    environment:
-      - SERVER_PORT=8080
-      - SERVER_MODE=development
-      - ALLOWED_ORIGINS=http://localhost:3000
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend:/app
-    networks:
-      - app-network
-
-  # Frontend service
+  # Frontend (Next.js)
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    build: ./frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    networks:
-      - app-network
+      - NEXT_PUBLIC_API_URL=http://backend:8080
     depends_on:
       - backend
+    networks:
+      - app-network
 
-  # Redis (optional, for session/cache)
-  # redis:
-  #   image: redis:7-alpine
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis-data:/data
-  #   networks:
-  #     - app-network
+  # Go Backend (API Gateway)
+  backend:
+    build: ./backend
+    ports:
+      - "8080:8080"
+    environment:
+      # Server
+      - SERVER_PORT=8080
+      - SERVER_MODE=production
+      - ALLOWED_ORIGINS=http://localhost:3000,http://frontend:3000
+      # LLM (use .env file for API keys)
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-60s}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      # Agent Service
+      - AGENT_SERVICE_URL=http://agent:8081
+      - AGENT_TIMEOUT=30s
+      # Image Processing
+      - IMAGE_MAX_SIZE=10485760
+      - IMAGE_MAX_TOTAL=52428800
+      - IMAGE_QUALITY=80
+      - IMAGE_MAX_DIMENSION=2048
+      # Session
+      - SESSION_TTL=1h
+    depends_on:
+      agent:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # Python Agent (Multi-Agent Pipeline + ChatAgent)
+  agent:
+    build: ./agent-core
+    ports:
+      - "8081:8081"
+    environment:
+      - AGENT_PORT=8081
+      - LOG_LEVEL=INFO
+      # LLM (shared with backend)
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app-network
 
 networks:
   app-network:
     driver: bridge
-
-# volumes:
-#   redis-data:

@@ -5,6 +5,7 @@ from schemas.layout import LayoutSchema, Region
 from schemas.component import ComponentList, Component
 from schemas.interaction import InteractionSpec, State, Transition
 from schemas.code import GeneratedCode, ValidationResult, ValidationError
+from schemas.chat import ChatRequest, ChatMessage, ToolCallData, ToolResultData
 
 __all__ = [
     "ImageData",
@@ -20,4 +21,8 @@ __all__ = [
     "GeneratedCode",
     "ValidationResult",
     "ValidationError",
+    "ChatRequest",
+    "ChatMessage",
+    "ToolCallData",
+    "ToolResultData",
 ]

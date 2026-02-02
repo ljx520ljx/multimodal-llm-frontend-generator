@@ -18,6 +18,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def get_pipeline_llm_gateway() -> LLMGateway:
+    """Get LLM gateway for pipeline agents.
+
+    Currently uses default configuration. Individual agent model overrides
+    (LAYOUT_AGENT_MODEL, COMPONENT_AGENT_MODEL, etc.) are available in config
+    but require workflow refactoring to inject multiple LLM instances.
+
+    TODO: When needed, modify create_generate_workflow to accept a dict of
+    agent_type -> LLMGateway mappings for per-agent model configuration.
+    """
+    return get_llm_gateway("default")
+
+
 class GenerateRequest(BaseModel):
     """Request body for generate endpoint."""
 
@@ -89,7 +102,7 @@ def format_sse(event: SSEEvent) -> str:
 @router.post("/generate")
 async def generate(
     request: GenerateRequest,
-    llm: LLMGateway = Depends(get_llm_gateway),
+    llm: LLMGateway = Depends(get_pipeline_llm_gateway),
 ) -> StreamingResponse:
     """Generate code from design images.
 
@@ -133,7 +146,7 @@ async def generate(
 @router.post("/generate/sync", response_model=GenerateResponse)
 async def generate_sync(
     request: GenerateRequest,
-    llm: LLMGateway = Depends(get_llm_gateway),
+    llm: LLMGateway = Depends(get_pipeline_llm_gateway),
 ) -> GenerateResponse:
     """Generate code synchronously (non-streaming).
 

@@ -4,6 +4,7 @@ from llm.prompts.layout import LAYOUT_ANALYZER_PROMPT
 from llm.prompts.component import COMPONENT_DETECTOR_PROMPT
 from llm.prompts.interaction import INTERACTION_INFER_PROMPT
 from llm.prompts.generator import CODE_GENERATOR_PROMPT, CODE_GENERATOR_PROMPT_WITH_FEEDBACK
+from llm.prompts.chat import CHAT_MODIFY_PROMPT, CHAT_SYSTEM_PROMPT
 
 __all__ = [
     "LAYOUT_ANALYZER_PROMPT",
@@ -11,4 +12,6 @@ __all__ = [
     "INTERACTION_INFER_PROMPT",
     "CODE_GENERATOR_PROMPT",
     "CODE_GENERATOR_PROMPT_WITH_FEEDBACK",
+    "CHAT_MODIFY_PROMPT",
+    "CHAT_SYSTEM_PROMPT",
 ]

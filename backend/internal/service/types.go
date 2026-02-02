@@ -37,10 +37,12 @@ type SSEEvent struct {
 
 // SSE event types
 const (
-	SSETypeThinking = "thinking"
-	SSETypeCode     = "code"
-	SSETypeError    = "error"
-	SSETypeDone     = "done"
+	SSETypeThinking   = "thinking"
+	SSETypeCode       = "code"
+	SSETypeError      = "error"
+	SSETypeDone       = "done"
+	SSETypeToolCall   = "tool_call"
+	SSETypeToolResult = "tool_result"
 )
 
 // Supported frameworks

@@ -17,7 +17,6 @@ function generateId() {
 export function InteractionPanel() {
   const images = useProjectStore((state) => state.images);
   const addImages = useProjectStore((state) => state.addImages);
-  const clearImages = useProjectStore((state) => state.clearImages);
   const chatMessages = useProjectStore((state) => state.chatMessages);
   const status = useProjectStore((state) => state.status);
   const generatedCode = useProjectStore((state) => state.generatedCode);
@@ -126,9 +125,10 @@ export function InteractionPanel() {
           <div className="mb-2">
             <span className="text-xs font-medium text-slate-600">
               已上传 {images.length} 张图片
+              {isProcessing && <span className="ml-2 text-slate-400">（生成中，无法修改）</span>}
             </span>
           </div>
-          <ImageList layout="horizontal" />
+          <ImageList layout="horizontal" disabled={isProcessing} />
         </div>
       )}
 

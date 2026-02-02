@@ -80,17 +80,18 @@ func (a *App) initServices() error {
 	}
 	a.Gateway = gw
 
-	// Generate service
-	a.GenerateService = service.NewGenerateService(
-		a.SessionStore,
-		a.PromptService,
-		a.Gateway,
-	)
-
 	// Agent client (for Python Agent service)
 	a.AgentClient = service.NewAgentClient(
 		a.Config.AgentServiceURL,
 		a.Config.AgentTimeout,
+	)
+
+	// Generate service (with AgentClient for chat via Python Agent)
+	a.GenerateService = service.NewGenerateServiceWithAgent(
+		a.SessionStore,
+		a.PromptService,
+		a.Gateway,
+		a.AgentClient,
 	)
 
 	// Agent generate service (uses Python Agent for multi-agent pipeline)

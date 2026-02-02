@@ -12,15 +12,16 @@ import type { ImageFile } from '@/types';
 
 interface ImageListProps {
   layout?: 'vertical' | 'horizontal';
+  disabled?: boolean;
 }
 
-export function ImageList({ layout = 'vertical' }: ImageListProps) {
+export function ImageList({ layout = 'vertical', disabled = false }: ImageListProps) {
   const images = useProjectStore((state) => state.images);
   const reorderImages = useProjectStore((state) => state.reorderImages);
   const removeImage = useProjectStore((state) => state.removeImage);
 
   const handleDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
+    if (!result.destination || disabled) return;
 
     const items = Array.from(images);
     const [reorderedItem] = items.splice(result.source.index, 1);
@@ -60,6 +61,7 @@ export function ImageList({ layout = 'vertical' }: ImageListProps) {
                   image={image}
                   index={index}
                   onRemove={() => removeImage(image.id)}
+                  disabled={disabled}
                 />
               ) : (
                 <VerticalImageItem
@@ -67,6 +69,7 @@ export function ImageList({ layout = 'vertical' }: ImageListProps) {
                   image={image}
                   index={index}
                   onRemove={() => removeImage(image.id)}
+                  disabled={disabled}
                 />
               )
             ))}
@@ -82,19 +85,21 @@ interface ImageItemProps {
   image: ImageFile;
   index: number;
   onRemove: () => void;
+  disabled?: boolean;
 }
 
 // 横向布局的图片卡片（更紧凑）
-function HorizontalImageItem({ image, index, onRemove }: ImageItemProps) {
+function HorizontalImageItem({ image, index, onRemove, disabled = false }: ImageItemProps) {
   return (
-    <Draggable draggableId={image.id} index={index}>
+    <Draggable draggableId={image.id} index={index} isDragDisabled={disabled}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
           className={`
-            group relative flex-shrink-0 cursor-grab
+            group relative flex-shrink-0
+            ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-grab'}
             ${snapshot.isDragging ? 'z-10' : ''}
           `}
         >
@@ -119,18 +124,20 @@ function HorizontalImageItem({ image, index, onRemove }: ImageItemProps) {
               unoptimized
             />
 
-            {/* 删除按钮 */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemove();
-              }}
-              className="absolute -right-1 -top-1 z-20 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
-            >
-              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            {/* 删除按钮 - 禁用时隐藏 */}
+            {!disabled && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove();
+                }}
+                className="absolute -right-1 -top-1 z-20 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -139,9 +146,9 @@ function HorizontalImageItem({ image, index, onRemove }: ImageItemProps) {
 }
 
 // 纵向布局的图片卡片（原设计）
-function VerticalImageItem({ image, index, onRemove }: ImageItemProps) {
+function VerticalImageItem({ image, index, onRemove, disabled = false }: ImageItemProps) {
   return (
-    <Draggable draggableId={image.id} index={index}>
+    <Draggable draggableId={image.id} index={index} isDragDisabled={disabled}>
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
@@ -149,12 +156,13 @@ function VerticalImageItem({ image, index, onRemove }: ImageItemProps) {
           className={`
             group relative flex items-center gap-3 rounded-lg border bg-white p-2
             ${snapshot.isDragging ? 'border-blue-400 shadow-lg' : 'border-slate-200'}
+            ${disabled ? 'opacity-60' : ''}
           `}
         >
           {/* 拖拽手柄 */}
           <div
             {...provided.dragHandleProps}
-            className="flex cursor-grab items-center text-slate-400 hover:text-slate-600"
+            className={`flex items-center text-slate-400 ${disabled ? 'cursor-not-allowed' : 'cursor-grab hover:text-slate-600'}`}
           >
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="9" cy="6" r="1.5" />
@@ -188,15 +196,17 @@ function VerticalImageItem({ image, index, onRemove }: ImageItemProps) {
             {image.file.name}
           </span>
 
-          {/* 删除按钮 */}
-          <button
-            onClick={onRemove}
-            className="rounded p-1 text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-red-500 group-hover:opacity-100"
-          >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          {/* 删除按钮 - 禁用时隐藏 */}
+          {!disabled && (
+            <button
+              onClick={onRemove}
+              className="rounded p-1 text-slate-400 opacity-0 transition-opacity hover:bg-slate-100 hover:text-red-500 group-hover:opacity-100"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       )}
     </Draggable>

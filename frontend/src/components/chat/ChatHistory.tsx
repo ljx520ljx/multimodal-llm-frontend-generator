@@ -73,12 +73,16 @@ function parseContent(content: string): ParsedContent {
   // 3. 移除残留的 HTML 标签
   textContent = textContent.replace(/<\/?(html|head|body|div|script|style)[^>]*>/gi, '');
 
-  // 4. 移除 AI 常见的过渡语句
+  // 4. 移除 AI 常见的过渡语句（包括不完整的）
   textContent = textContent
-    .replace(/下面是.*代码[：:.]*/gi, '')
-    .replace(/以下是.*代码[：:.]*/gi, '')
-    .replace(/完整代码如下[：:.]*/gi, '')
-    .replace(/代码如下[：:.]*/gi, '');
+    .replace(/下面是.*?代码[：:.]*\s*/gi, '')
+    .replace(/以下是.*?代码[：:.]*\s*/gi, '')
+    .replace(/完整代码如下[：:.]*\s*/gi, '')
+    .replace(/代码如下[：:.]*\s*/gi, '')
+    .replace(/下面.*?实现[：:.>]*\s*/gi, '')  // 处理"下面是实现代>"
+    .replace(/以下.*?实现[：:.>]*\s*/gi, '')
+    .replace(/下面生成.*?[：:.]*\s*/gi, '')
+    .replace(/现在生成.*?[：:.]*\s*/gi, '');
 
   // 5. 移除状态前缀
   textContent = textContent

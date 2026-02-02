@@ -34,18 +34,18 @@ COMPONENT_DETECTOR_PROMPT = """你是一位专业的 UI 组件识别专家。请
 ## 输出格式
 
 ```json
-{
+{{
     "components": [
-        {
+        {{
             "id": "组件ID",
             "type": "组件类型",
             "name": "组件名称",
             "region": "所属区域",
-            "properties": {"text": "文字", "variant": "样式"}
-        }
+            "properties": {{"text": "文字", "variant": "样式"}}
+        }}
     ],
     "summary": "组件概述"
-}
+}}
 ```
 
 ## 注意事项

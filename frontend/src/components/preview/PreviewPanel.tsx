@@ -237,7 +237,7 @@ export function PreviewPanel() {
                 </div>
                 {selectedElement.text && (
                   <p className="mt-1 truncate text-slate-500">
-                    "{selectedElement.text.slice(0, 50)}{selectedElement.text.length > 50 ? '...' : ''}"
+                    &ldquo;{selectedElement.text.slice(0, 50)}{selectedElement.text.length > 50 ? '...' : ''}&rdquo;
                   </p>
                 )}
               </div>

@@ -6,6 +6,10 @@ from typing import Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Agent types that can have custom model configurations
+AgentType = Literal["default", "chat", "layout", "component", "interaction", "codegen", "validator"]
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -19,7 +23,7 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8080"]
 
-    # LLM Provider selection
+    # LLM Provider selection (default for all agents)
     llm_provider: Literal[
         "openai", "anthropic", "google", "deepseek", "doubao", "glm", "kimi"
     ] = "openai"
@@ -56,14 +60,38 @@ class Settings(BaseSettings):
     kimi_api_key: str = ""
     kimi_model: str = "moonshot-v1-32k"
 
+    # ===========================================
+    # Agent-specific model overrides (optional)
+    # If not set, uses default llm_provider + model
+    # ===========================================
+
+    # ChatAgent model override
+    chat_agent_model: Optional[str] = None
+
+    # Pipeline Agent model overrides
+    layout_agent_model: Optional[str] = None      # LayoutAnalyzer
+    component_agent_model: Optional[str] = None   # ComponentDetector
+    interaction_agent_model: Optional[str] = None # InteractionInfer
+    codegen_agent_model: Optional[str] = None     # CodeGenerator
+    validator_agent_model: Optional[str] = None   # CodeValidator (轻量任务可用便宜模型)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
 
-    def get_llm_config(self) -> dict:
-        """Get LLM configuration for the selected provider."""
+    def get_llm_config(self, agent_type: AgentType = "default") -> dict:
+        """Get LLM configuration for the selected provider.
+
+        Args:
+            agent_type: The agent type to get config for. If the agent has
+                       a custom model override configured, that model will be used.
+                       Otherwise falls back to the default provider model.
+
+        Returns:
+            dict with keys: provider, api_key, model, base_url
+        """
         provider = self.llm_provider
         configs = {
             "openai": {
@@ -102,7 +130,25 @@ class Settings(BaseSettings):
                 "base_url": None,
             },
         }
-        return {"provider": provider, **configs[provider]}
+
+        config = {"provider": provider, **configs[provider]}
+
+        # Apply agent-specific model override if configured
+        agent_model_overrides = {
+            "chat": self.chat_agent_model,
+            "layout": self.layout_agent_model,
+            "component": self.component_agent_model,
+            "interaction": self.interaction_agent_model,
+            "codegen": self.codegen_agent_model,
+            "validator": self.validator_agent_model,
+        }
+
+        if agent_type != "default" and agent_type in agent_model_overrides:
+            override_model = agent_model_overrides[agent_type]
+            if override_model:
+                config["model"] = override_model
+
+        return config
 
 
 @lru_cache

@@ -5,6 +5,7 @@ from agents.layout_analyzer import LayoutAnalyzerAgent
 from agents.component_detector import ComponentDetectorAgent
 from agents.interaction_infer import InteractionInferAgent
 from agents.code_generator import CodeGeneratorAgent
+from agents.chat_agent import ChatAgent
 
 __all__ = [
     "BaseAgent",
@@ -12,4 +13,5 @@ __all__ = [
     "ComponentDetectorAgent",
     "InteractionInferAgent",
     "CodeGeneratorAgent",
+    "ChatAgent",
 ]

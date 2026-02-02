@@ -23,6 +23,9 @@ class SSEEventType(str, Enum):
     CODE = "code"
     ERROR = "error"
     DONE = "done"
+    # ChatAgent tool calling events
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
 
 
 class SSEEvent(BaseModel):

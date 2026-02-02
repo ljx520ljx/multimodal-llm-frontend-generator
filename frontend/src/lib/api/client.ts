@@ -63,9 +63,9 @@ export const api = {
     });
   },
 
-  // 生成代码 (返回 Response 用于 SSE)
+  // 生成代码 (返回 Response 用于 SSE) - 使用 Python Agent Pipeline
   generate: async (sessionId: string, imageIds: string[], framework: string = 'react'): Promise<Response> => {
-    const response = await fetch(`${API_BASE}/api/generate`, {
+    const response = await fetch(`${API_BASE}/api/agent/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

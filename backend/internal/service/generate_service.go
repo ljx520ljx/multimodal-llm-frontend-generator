@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"regexp"
 	"strings"
@@ -24,6 +25,7 @@ type generateService struct {
 	sessionStore  SessionStore
 	promptService PromptService
 	gateway       gateway.LLMGateway
+	agentClient   AgentClient
 }
 
 // NewGenerateService creates a new GenerateService
@@ -36,6 +38,21 @@ func NewGenerateService(
 		sessionStore:  sessionStore,
 		promptService: promptService,
 		gateway:       gw,
+	}
+}
+
+// NewGenerateServiceWithAgent creates a new GenerateService with AgentClient support
+func NewGenerateServiceWithAgent(
+	sessionStore SessionStore,
+	promptService PromptService,
+	gw gateway.LLMGateway,
+	agentClient AgentClient,
+) GenerateService {
+	return &generateService{
+		sessionStore:  sessionStore,
+		promptService: promptService,
+		gateway:       gw,
+		agentClient:   agentClient,
 	}
 }
 
@@ -123,8 +140,113 @@ func (s *generateService) Chat(ctx context.Context, sessionID string, message st
 		return nil, err
 	}
 
-	// Build prompt with original images for reference
 	log.Printf("[Chat] Session %s has %d images for reference", sessionID, len(session.Images))
+
+	// Add user message to history
+	s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+		Role:    "user",
+		Content: message,
+		Type:    "text",
+	})
+
+	// If agentClient is available, use Python Agent for chat (with tool calling support)
+	if s.agentClient != nil {
+		return s.chatViaAgent(ctx, sessionID, session, message, history)
+	}
+
+	// Fallback: direct LLM call without tool calling
+	return s.chatViaLLM(ctx, sessionID, session, message, history)
+}
+
+// chatViaAgent uses Python Agent for chat with tool calling support
+func (s *generateService) chatViaAgent(ctx context.Context, sessionID string, session *Session, message string, history []HistoryEntry) (<-chan SSEEvent, error) {
+	// Convert images to agent format
+	agentImages := make([]map[string]interface{}, len(session.Images))
+	for i, img := range session.Images {
+		agentImages[i] = map[string]interface{}{
+			"id":     img.ID,
+			"base64": img.Base64,
+			"order":  img.Order,
+		}
+	}
+
+	// Convert history to agent format
+	agentHistory := make([]ChatHistoryEntry, len(history))
+	for i, h := range history {
+		agentHistory[i] = ChatHistoryEntry{
+			Role:    h.Role,
+			Content: h.Content,
+		}
+	}
+
+	// Create agent chat request
+	req := &AgentChatRequest{
+		SessionID:   sessionID,
+		Message:     message,
+		CurrentCode: session.Code,
+		Images:      agentImages,
+		History:     agentHistory,
+	}
+
+	// Call Python Agent
+	agentChan, err := s.agentClient.Chat(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create output channel
+	outChan := make(chan SSEEvent)
+
+	// Forward agent events and save code on completion
+	go func() {
+		defer close(outChan)
+		s.processAgentChatOutput(ctx, sessionID, agentChan, outChan)
+	}()
+
+	return outChan, nil
+}
+
+// processAgentChatOutput forwards agent events and saves code on completion
+func (s *generateService) processAgentChatOutput(ctx context.Context, sessionID string, agentChan <-chan SSEEvent, outChan chan<- SSEEvent) {
+	var codeContent string
+
+	for event := range agentChan {
+		select {
+		case <-ctx.Done():
+			outChan <- SSEEvent{Type: SSETypeError, Content: "Request cancelled"}
+			return
+		default:
+		}
+
+		// Forward the event
+		outChan <- event
+
+		// Capture code content for saving
+		if event.Type == SSETypeCode {
+			// Parse JSON to extract html field
+			var codeData map[string]interface{}
+			if err := json.Unmarshal([]byte(event.Content), &codeData); err == nil {
+				if html, ok := codeData["html"].(string); ok {
+					codeContent = html
+				}
+			}
+		}
+
+		// On done, save the code
+		if event.Type == SSETypeDone && codeContent != "" {
+			s.sessionStore.UpdateCode(ctx, sessionID, codeContent)
+			s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+				Role:    "assistant",
+				Content: codeContent,
+				Type:    "code",
+			})
+		}
+	}
+}
+
+// chatViaLLM uses direct LLM call without tool calling (fallback)
+func (s *generateService) chatViaLLM(ctx context.Context, sessionID string, session *Session, message string, history []HistoryEntry) (<-chan SSEEvent, error) {
+	// Build prompt with original images for reference
 	systemPrompt := s.promptService.BuildSystemPrompt(session.Framework)
 	messages := s.promptService.BuildChatPrompt(session.Code, message, history, session.Images)
 
@@ -138,13 +260,6 @@ func (s *generateService) Chat(ctx context.Context, sessionID string, message st
 			MaxTokens: 8192,
 		},
 	}
-
-	// Add user message to history
-	s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
-		Role:    "user",
-		Content: message,
-		Type:    "text",
-	})
 
 	// Call LLM
 	llmChan, err := s.gateway.ChatStream(ctx, req)
