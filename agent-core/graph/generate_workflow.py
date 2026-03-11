@@ -149,6 +149,11 @@ class GenerateWorkflow:
                 event=SSEEventType.ERROR,
                 data={"error": str(e)},
             )
+            # Always emit DONE after ERROR so frontend properly transitions state
+            yield SSEEvent(
+                event=SSEEventType.DONE,
+                data={"success": False},
+            )
 
     def _build_agent_kwargs(self, agent_name: str, state: DesignState) -> dict[str, Any]:
         """Build kwargs for an analysis agent based on registry config or defaults.

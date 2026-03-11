@@ -115,10 +115,11 @@ func Load() *Config {
 	viper.SetDefault("SESSION_HISTORY_LIMIT", 20)
 
 	// Agent service defaults
-	// Timeout chain (inner → outer): Python LLM 60s < AGENT_TIMEOUT 180s < HANDLER_TIMEOUT 240s < Frontend SSE 300s
+	// Timeout chain (inner → outer): Python LLM 120s < AGENT_TIMEOUT 360s < HANDLER_TIMEOUT 480s < Frontend SSE 600s
+	// Quality 模式需要 4+ 个 Agent 串行调用（各 40-90s），总时间可达 200-400s
 	viper.SetDefault("AGENT_SERVICE_URL", "http://localhost:8081")
-	viper.SetDefault("AGENT_TIMEOUT", "180s")
-	viper.SetDefault("HANDLER_TIMEOUT", "240s")
+	viper.SetDefault("AGENT_TIMEOUT", "360s")
+	viper.SetDefault("HANDLER_TIMEOUT", "480s")
 
 	// Rate limiting defaults
 	viper.SetDefault("RATE_LIMIT_IP_RATE", 10.0)

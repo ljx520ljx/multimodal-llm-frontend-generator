@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import AsyncIterator, Optional, Type
 
 from pydantic import BaseModel
@@ -15,6 +16,8 @@ from schemas.component import ComponentList
 from schemas.interaction import InteractionSpec
 from schemas.layout import LayoutInfo
 from utils.code_extractor import extract_html_code
+
+logger = logging.getLogger(__name__)
 
 
 class CodeGeneratorAgent(BaseAgent):
@@ -36,17 +39,7 @@ class CodeGeneratorAgent(BaseAgent):
         validation_errors: Optional[list[str]] = None,
         **kwargs,
     ) -> str:
-        """Build the code generation prompt.
-
-        Args:
-            layout_info: Layout information from LayoutAnalyzer
-            component_info: Component information from ComponentDetector
-            interaction_info: Interaction spec from InteractionInfer
-            validation_errors: Optional validation errors for retry
-
-        Returns:
-            Formatted code generator prompt
-        """
+        """Build the code generation prompt."""
         layout_str = ""
         if layout_info:
             layout_str = json.dumps(layout_info.model_dump(), ensure_ascii=False, indent=2)
@@ -73,11 +66,7 @@ class CodeGeneratorAgent(BaseAgent):
         )
 
     def get_output_schema(self) -> Type[BaseModel]:
-        """Get the GeneratedCode schema for output.
-
-        Returns:
-            GeneratedCode Pydantic model
-        """
+        """Get the GeneratedCode schema for output."""
         return GeneratedCode
 
     async def run(
@@ -86,18 +75,11 @@ class CodeGeneratorAgent(BaseAgent):
         stream_events: bool = True,
         **kwargs,
     ) -> AsyncIterator[SSEEvent]:
-        """Run the code generator agent.
+        """Run the code generator agent with streaming.
 
-        This overrides the base run method to handle raw text output
-        and extract HTML code from markdown code blocks.
-
-        Args:
-            images: Optional list of image data
-            stream_events: Whether to yield intermediate events
-            **kwargs: Agent-specific parameters
-
-        Yields:
-            SSE events for agent progress and results
+        Uses chat_stream() instead of blocking chat() to provide real-time
+        feedback during code generation. The user sees the LLM output flowing
+        as THINKING events, and the final extracted HTML as a CODE event.
         """
         # Emit agent start event
         if stream_events:
@@ -113,10 +95,26 @@ class CodeGeneratorAgent(BaseAgent):
             # Build messages
             messages = self._build_messages(prompt, images)
 
-            # Get raw text response (not structured) for code generation
-            raw_response = await self.llm.chat(messages)
+            # Stream LLM response for real-time feedback
+            raw_response = ""
+            chunk_count = 0
+            async for chunk in self.llm.chat_stream(messages):
+                raw_response += chunk
+                chunk_count += 1
 
-            # Extract HTML code from response
+                # Emit thinking events so user sees progress in real-time
+                if stream_events:
+                    yield SSEEvent(
+                        event=SSEEventType.THINKING,
+                        data={"content": chunk},
+                    )
+
+            logger.info(
+                f"CodeGenerator received {chunk_count} chunks, "
+                f"total {len(raw_response)} chars"
+            )
+
+            # Extract HTML code from full response
             html_code = self._extract_html_code(raw_response)
 
             # Create result object
@@ -126,7 +124,7 @@ class CodeGeneratorAgent(BaseAgent):
                 js=None,   # All logic in Alpine.js
             )
 
-            # Emit code event with the HTML
+            # Emit code event with the extracted HTML
             if stream_events:
                 yield SSEEvent(
                     event=SSEEventType.CODE,
@@ -150,6 +148,7 @@ class CodeGeneratorAgent(BaseAgent):
             self._last_result = result
 
         except Exception as e:
+            logger.error(f"CodeGenerator error: {e}")
             if stream_events:
                 yield SSEEvent(
                     event=SSEEventType.ERROR,

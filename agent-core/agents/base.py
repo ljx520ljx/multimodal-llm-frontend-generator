@@ -100,6 +100,13 @@ class BaseAgent(ABC):
             # Build messages
             messages = self._build_messages(prompt, images)
 
+            # Emit progress event so user knows the system is working
+            if stream_events:
+                yield SSEEvent(
+                    event=SSEEventType.THINKING,
+                    data={"content": f"正在调用 AI 模型进行{self.description}...\n"},
+                )
+
             # Get structured output from LLM
             output_schema = self.get_output_schema()
             result = await self.llm.chat_structured(messages, output_schema)

@@ -95,7 +95,7 @@ function parseContent(content: string): ParsedContent {
   textContent = textContent.replace(/\n{3,}/g, '\n\n').trim();
 
   // 6. 提取完成/状态消息（无论何种格式，这些始终显示为 mainContent）
-  const donePattern = /^.*(原型.*生成完成|代码.*已生成|代码已更新|请在右侧预览|未能生成代码|请重试或调整).*$/gm;
+  const donePattern = /^.*(原型.*生成完成|代码.*已生成|代码已更新|请在右侧预览|未能生成代码|请重试或调整|生成失败|重新生成失败|Request cancelled|SSE.*超时|连接超时).*$/gm;
   const doneMatches = textContent.match(donePattern) || [];
   if (doneMatches.length > 0) {
     textContent = textContent.replace(donePattern, '').replace(/\n{3,}/g, '\n').trim();
@@ -193,10 +193,10 @@ function getMessageType(content: string): 'success' | 'warning' | 'error' | 'nor
   if (content.includes('✅') || content.includes('代码已更新') || content.includes('代码生成完成') || content.includes('原型生成完成') || content.includes('原型重新生成完成')) {
     return 'success';
   }
-  if (content.includes('⚠️') || content.includes('格式异常')) {
+  if (content.includes('⚠️') || content.includes('格式异常') || content.includes('未能生成')) {
     return 'warning';
   }
-  if (content.includes('错误') || content.includes('失败')) {
+  if (content.includes('错误') || content.includes('失败') || content.includes('超时') || content.includes('cancelled')) {
     return 'error';
   }
   return 'normal';

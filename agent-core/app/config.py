@@ -34,8 +34,9 @@ class Settings(BaseSettings):
     max_retries: int = 3
 
     # LLM request timeout (seconds) — innermost timeout in the chain:
-    # LLM request 60s < Go AGENT_TIMEOUT 180s < Go HANDLER_TIMEOUT 240s < Frontend SSE 300s
-    llm_request_timeout: int = 60
+    # LLM request 120s < Go AGENT_TIMEOUT 360s < Go HANDLER_TIMEOUT 480s < Frontend SSE 600s
+    # CodeGenerator 生成完整 HTML 可能需要 60-90s，分析 Agent 各需 30-60s
+    llm_request_timeout: int = 120
 
     # Internal API token for Go backend checkpoint API (must match Go INTERNAL_API_TOKEN)
     internal_api_token: str = ""

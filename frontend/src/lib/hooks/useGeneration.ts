@@ -170,7 +170,17 @@ export function useGeneration() {
           appendThinking(thinkingBuffer);
           thinkingBuffer = '';
         }
-        appendToLastAssistantMessage(`${errorPrefix}: ${error}`);
+        // If partial code was generated before the error, save it
+        if (codeBuffer) {
+          const partialCode = cleanCodeContent(codeBuffer);
+          if (partialCode.length > 50) {
+            setGeneratedCode({
+              code: partialCode,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        appendToLastAssistantMessage(`\n\n${errorPrefix}: ${error}`);
         setError(error);
         setStatus('error');
       },
