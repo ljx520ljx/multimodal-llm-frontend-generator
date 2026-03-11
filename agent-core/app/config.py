@@ -99,6 +99,14 @@ class Settings(BaseSettings):
     codegen_agent_temperature: Optional[float] = None     # 代码生成建议低温 (0.2-0.3)
     validator_agent_temperature: Optional[float] = None
 
+    # ===========================================
+    # Agent-specific max_tokens overrides (optional)
+    # Code-generation agents need higher limits for full HTML output
+    # ===========================================
+    default_max_tokens: Optional[int] = None  # None = use model default
+    codegen_agent_max_tokens: int = 16384
+    chat_agent_max_tokens: int = 16384
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -188,6 +196,17 @@ class Settings(BaseSettings):
             if override_temp is not None:
                 temperature = override_temp
         config["temperature"] = temperature
+
+        # Apply agent-specific max_tokens
+        agent_max_tokens_overrides = {
+            "codegen": self.codegen_agent_max_tokens,
+            "chat": self.chat_agent_max_tokens,
+        }
+
+        max_tokens = self.default_max_tokens
+        if agent_type in agent_max_tokens_overrides:
+            max_tokens = agent_max_tokens_overrides[agent_type]
+        config["max_tokens"] = max_tokens
 
         return config
 

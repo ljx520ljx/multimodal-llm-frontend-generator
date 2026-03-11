@@ -209,9 +209,12 @@ ${finalHtml}
 </html>`;
       }
 
-      // 注入标注模式脚本（在 </body> 前）
-      if (finalHtml.includes('</body>')) {
-        finalHtml = finalHtml.replace('</body>', ANNOTATION_SCRIPT + '</body>');
+      // 注入标注模式脚本（在最后一个 </body> 前）
+      // 必须用 lastIndexOf 找最后一个 </body>，因为 LLM 代码中可能
+      // 在 JS 字符串里包含 '</body>'，String.replace 会匹配第一个
+      const lastBodyIdx = finalHtml.lastIndexOf('</body>');
+      if (lastBodyIdx !== -1) {
+        finalHtml = finalHtml.substring(0, lastBodyIdx) + ANNOTATION_SCRIPT + finalHtml.substring(lastBodyIdx);
       } else {
         finalHtml += ANNOTATION_SCRIPT;
       }

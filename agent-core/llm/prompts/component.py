@@ -33,8 +33,11 @@ COMPONENT_DETECTOR_PROMPT = """你是一位专业的 UI 组件识别专家。请
 
 ## 输出格式
 
+注意：`summary` 放在 `components` **之前**输出，且必须是一句话简短概述。
+
 ```json
 {{
+    "summary": "一句话概述，如：识别出导航栏、搜索框、商品卡片等12个组件",
     "components": [
         {{
             "id": "组件ID",
@@ -43,8 +46,7 @@ COMPONENT_DETECTOR_PROMPT = """你是一位专业的 UI 组件识别专家。请
             "region": "所属区域",
             "properties": {{"text": "文字", "variant": "样式"}}
         }}
-    ],
-    "summary": "组件概述"
+    ]
 }}
 ```
 

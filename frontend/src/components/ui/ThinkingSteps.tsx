@@ -30,7 +30,7 @@ function cleanMarkdownContent(text: string): string {
     .replace(/^[-*]\s*/gm, '• ')           // 将列表符号统一为 •
     .replace(/下面是.*代码[：:.]*/gi, '')   // 移除过渡语句
     .replace(/以下是.*代码[：:.]*/gi, '')
-    .replace(/<\/?(html|head|body)[^>]*>/gi, '')  // 移除 HTML 标签残留
+    .replace(/<\/?[a-zA-Z][^>]*>/gi, '')           // 移除所有 HTML 标签残留
     .replace(/\n{3,}/g, '\n\n')            // 移除多余空行
     .trim();
 }

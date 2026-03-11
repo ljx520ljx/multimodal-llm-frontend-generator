@@ -51,7 +51,14 @@ export function useChat() {
           },
           onCode: (content) => {
             // 代码只存入 buffer，不追加到对话历史
-            codeBuffer += content;
+            // chatViaAgent: CODE 事件是完整 HTML → 替换
+            // chatViaLLM (fallback): CODE 事件是流式片段 → 累加
+            const looksComplete = content.trimStart().startsWith('<!DOCTYPE') || content.trimStart().startsWith('<html');
+            if (looksComplete) {
+              codeBuffer = content;
+            } else {
+              codeBuffer += content;
+            }
           },
           onDone: () => {
             // 提取代码并更新编辑器

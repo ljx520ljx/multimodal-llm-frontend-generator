@@ -22,16 +22,16 @@ LAYOUT_ANALYZER_PROMPT = """你是一位专业的 UI 布局分析师。请分析
 
 ## 输出要求
 
-请按照以下 JSON 格式输出分析结果：
+请按照以下 JSON 格式输出分析结果（注意：`description` 放在最前面）：
 
 ```json
 {
+    "description": "一句话描述布局，如：左侧边栏+右侧主内容区的经典后台布局",
     "structure": "布局类型描述",
+    "grid_system": "flex 或 grid",
     "regions": [
         {"name": "区域名", "position": "位置", "estimated_size": "尺寸类名"}
-    ],
-    "grid_system": "flex 或 grid",
-    "description": "布局简要描述"
+    ]
 }
 ```
 

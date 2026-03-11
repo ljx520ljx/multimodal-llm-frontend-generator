@@ -86,7 +86,6 @@ export function useGeneration() {
   ) => {
     let codeBuffer = '';
     let thinkingBuffer = '';
-    let codeRafPending = false;
     let thinkingRafPending = false;
 
     // Agent step counter for quality mode (maps agent events to Step format)
@@ -114,17 +113,21 @@ export function useGeneration() {
         }
       },
       onCode: (content) => {
-        codeBuffer += content;
-        if (!codeRafPending) {
-          codeRafPending = true;
-          const id = requestAnimationFrame(() => {
-            setGeneratedCode({
-              code: cleanCodeContent(codeBuffer),
-              timestamp: Date.now(),
-            });
-            codeRafPending = false;
+        // Fast 模式: CODE 事件是流式 token 片段，需要累加
+        // Quality 模式: CODE 事件是完整 HTML，需要替换（避免双重 HTML）
+        const mode = useProjectStore.getState().generationMode;
+        if (mode === 'quality') {
+          codeBuffer = content;
+        } else {
+          codeBuffer += content;
+        }
+        // 立即更新预览，让用户在生成过程中就能看到原型
+        const previewCode = cleanCodeContent(codeBuffer);
+        if (previewCode.length > 50) {
+          setGeneratedCode({
+            code: previewCode,
+            timestamp: Date.now(),
           });
-          rafIdsRef.current.push(id);
         }
       },
       onAgentStart: (agent, content) => {
@@ -155,9 +158,9 @@ export function useGeneration() {
             code: finalCode,
             timestamp: Date.now(),
           });
-          appendToLastAssistantMessage(doneMessage);
+          appendToLastAssistantMessage('\n\n' + doneMessage);
         } else {
-          appendToLastAssistantMessage('未能生成代码，请重试或调整设计稿');
+          appendToLastAssistantMessage('\n\n未能生成代码，请重试或调整设计稿');
         }
         setStatus('completed');
       },
@@ -169,6 +172,7 @@ export function useGeneration() {
         }
         appendToLastAssistantMessage(`${errorPrefix}: ${error}`);
         setError(error);
+        setStatus('error');
       },
     });
   }, [appendThinking, setGeneratedCode, setStatus, setError, appendToLastAssistantMessage]);
@@ -216,7 +220,7 @@ export function useGeneration() {
 
         await processSSEStream(
           response,
-          '原型生成完成，请在右侧预览区体验交互效果',
+          '✅ 原型生成完成，请在右侧预览区体验交互效果',
           '生成失败',
         );
       } else {
@@ -243,7 +247,7 @@ export function useGeneration() {
 
         await processSSEStream(
           response,
-          '原型生成完成，请在右侧预览区体验交互效果',
+          '✅ 原型生成完成，请在右侧预览区体验交互效果',
           '生成失败',
         );
       }
@@ -286,7 +290,7 @@ export function useGeneration() {
 
       await processSSEStream(
         response,
-        '原型重新生成完成，请在右侧预览区体验交互效果',
+        '✅ 原型重新生成完成，请在右侧预览区体验交互效果',
         '重新生成失败',
       );
     } catch (error) {

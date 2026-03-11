@@ -37,14 +37,18 @@ class InteractionSpec(BaseModel):
 
     Key concept: Transitions are NOT linear (1→2→3).
     Users can freely navigate: 1→2→1→3→1→2→3→2→1...
+
+    Field order matters: summary and initial_state are placed before
+    large array fields (states, transitions) to avoid LLM output
+    truncation when token budget is tight.
     """
 
+    summary: str = Field(
+        default="",
+        description="One-sentence summary of the interaction flow, e.g. '用户可在首页、搜索页和商品页间自由切换'"
+    )
+    initial_state: str = Field(description="Initial state ID")
     states: list[State] = Field(description="All states (one per design image)")
     transitions: list[Transition] = Field(
         description="All state transitions (should cover navigation between all states)"
-    )
-    initial_state: str = Field(description="Initial state ID")
-    summary: str = Field(
-        default="",
-        description="Brief summary of the interaction flow"
     )

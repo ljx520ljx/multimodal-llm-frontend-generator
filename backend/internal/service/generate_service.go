@@ -100,7 +100,7 @@ func (s *generateService) Generate(ctx context.Context, sessionID string, imageI
 			messages...,
 		),
 		Options: &types.ChatOptions{
-			MaxTokens: 8192, // Claude 3.5 Sonnet 的最大限制
+			MaxTokens: 16384,
 		},
 	}
 
@@ -164,9 +164,9 @@ func (s *generateService) Chat(ctx context.Context, sessionID string, message st
 // chatViaAgent uses Python Agent for chat with tool calling support
 func (s *generateService) chatViaAgent(ctx context.Context, sessionID string, session *Session, message string, history []HistoryEntry) (<-chan SSEEvent, error) {
 	// Convert images to agent format
-	agentImages := make([]map[string]interface{}, len(session.Images))
+	agentImages := make([]map[string]any, len(session.Images))
 	for i, img := range session.Images {
-		agentImages[i] = map[string]interface{}{
+		agentImages[i] = map[string]any{
 			"id":     img.ID,
 			"base64": img.Base64,
 			"order":  img.Order,
@@ -259,7 +259,7 @@ func (s *generateService) chatViaLLM(ctx context.Context, sessionID string, sess
 			messages...,
 		),
 		Options: &types.ChatOptions{
-			MaxTokens: 8192,
+			MaxTokens: 16384,
 		},
 	}
 

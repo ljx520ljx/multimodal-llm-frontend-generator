@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -366,22 +367,48 @@ func (c *agentClient) Chat(ctx context.Context, req *AgentChatRequest) (<-chan S
 	return outChan, nil
 }
 
+// htmlTagRegexp matches HTML tags like <div class="...">, </div>, etc.
+var htmlTagRegexp = regexp.MustCompile(`<[^>]+>`)
+
+// stripHTMLTags removes HTML tags from a string.
+func stripHTMLTags(s string) string {
+	return strings.TrimSpace(htmlTagRegexp.ReplaceAllString(s, ""))
+}
+
 // extractAgentResultSummary extracts a human-readable summary from agent result data.
 // It looks for "summary" or "description" fields in the result object first,
 // then falls back to JSON serialization of the full result.
+// For code generation results (containing "html" field), returns a brief message
+// instead of serializing the full HTML to avoid leaking code into chat messages.
 func extractAgentResultSummary(data map[string]any) string {
 	result, ok := data["result"].(map[string]any)
 	if !ok {
 		return "分析完成"
 	}
 
-	// Prefer summary field (ComponentList, InteractionSpec have this)
+	// Handle InteractionSpec results (has "states" + "transitions"):
+	// Build a clean summary from structured data instead of trusting the LLM's
+	// summary field, which may contain raw HTML/CSS from the design.
+	if states, ok := result["states"].([]any); ok {
+		if transitions, ok := result["transitions"].([]any); ok {
+			return formatInteractionSummary(result, states, transitions)
+		}
+	}
+
+	// Prefer summary field (ComponentList has this)
 	if summary, ok := result["summary"].(string); ok && summary != "" {
-		return summary
+		return stripHTMLTags(summary)
 	}
 	// Fall back to description field (LayoutSchema has this)
 	if desc, ok := result["description"].(string); ok && desc != "" {
-		return desc
+		return stripHTMLTags(desc)
+	}
+
+	// If result contains "html" field, it's code generation output.
+	// Don't serialize the full HTML — it would leak into chat messages
+	// and confuse the frontend's content parsing.
+	if _, hasHTML := result["html"]; hasHTML {
+		return "代码生成完成"
 	}
 
 	// Last resort: compact JSON of the result
@@ -389,4 +416,29 @@ func extractAgentResultSummary(data map[string]any) string {
 		return string(resultJSON)
 	}
 	return "分析完成"
+}
+
+// formatInteractionSummary builds a clean, deterministic summary from InteractionSpec
+// structured data, avoiding any raw HTML/CSS that the LLM may have put in the summary field.
+func formatInteractionSummary(result map[string]any, states []any, transitions []any) string {
+	var parts []string
+
+	// Use sanitized summary if it's short and clean
+	if summary, ok := result["summary"].(string); ok && summary != "" {
+		cleaned := stripHTMLTags(summary)
+		// Only use it if it's a reasonable one-liner (no CSS class leakage)
+		if len(cleaned) > 0 && len(cleaned) < 150 {
+			parts = append(parts, cleaned)
+		}
+	}
+
+	// Always include structured counts
+	parts = append(parts, fmt.Sprintf("共 %d 个页面状态，%d 个交互转换", len(states), len(transitions)))
+
+	// Add initial state name
+	if initial, ok := result["initial_state"].(string); ok && initial != "" {
+		parts = append(parts, fmt.Sprintf("初始状态: %s", initial))
+	}
+
+	return strings.Join(parts, "\n")
 }

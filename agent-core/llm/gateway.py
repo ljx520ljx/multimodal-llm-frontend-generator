@@ -45,13 +45,15 @@ class LLMGateway:
         base_url: Optional[str] = None,
         temperature: float = 0.7,
         request_timeout: Optional[int] = None,
+        max_tokens: Optional[int] = None,
     ):
         self.provider = provider.lower()
         self.model = model
         self.temperature = temperature
         self.request_timeout = request_timeout
-        self.client = self._create_client(provider, api_key, model, base_url, temperature, request_timeout)
-        logger.info(f"LLMGateway initialized: provider={provider}, model={model}, request_timeout={request_timeout}s")
+        self.max_tokens = max_tokens
+        self.client = self._create_client(provider, api_key, model, base_url, temperature, request_timeout, max_tokens)
+        logger.info(f"LLMGateway initialized: provider={provider}, model={model}, max_tokens={max_tokens}, request_timeout={request_timeout}s")
 
     def _create_client(
         self,
@@ -61,17 +63,21 @@ class LLMGateway:
         base_url: Optional[str],
         temperature: float,
         request_timeout: Optional[int] = None,
+        max_tokens: Optional[int] = None,
     ) -> BaseChatModel:
         """Create the appropriate LangChain client.
 
         Args:
             request_timeout: Per-request timeout in seconds. This is the innermost
                 timeout in the chain (LLM 60s < Agent 180s < Handler 240s < SSE 300s).
+            max_tokens: Maximum number of tokens in the LLM response.
         """
         provider = provider.lower()
-        timeout_kwargs: dict[str, Any] = {}
+        extra_kwargs: dict[str, Any] = {}
         if request_timeout is not None:
-            timeout_kwargs["request_timeout"] = request_timeout
+            extra_kwargs["request_timeout"] = request_timeout
+        if max_tokens is not None:
+            extra_kwargs["max_tokens"] = max_tokens
 
         if provider == "openai":
             from langchain_openai import ChatOpenAI
@@ -80,7 +86,7 @@ class LLMGateway:
                 model=model,
                 temperature=temperature,
                 base_url=base_url,
-                **timeout_kwargs,
+                **extra_kwargs,
             )
 
         elif provider == "anthropic":
@@ -89,16 +95,20 @@ class LLMGateway:
                 api_key=api_key,
                 model=model,
                 temperature=temperature,
-                **timeout_kwargs,
+                **extra_kwargs,
             )
 
         elif provider == "google":
             from langchain_google_genai import ChatGoogleGenerativeAI
+            # Google uses max_output_tokens instead of max_tokens
+            google_kwargs = dict(extra_kwargs)
+            if "max_tokens" in google_kwargs:
+                google_kwargs["max_output_tokens"] = google_kwargs.pop("max_tokens")
             return ChatGoogleGenerativeAI(
                 google_api_key=api_key,
                 model=model,
                 temperature=temperature,
-                **timeout_kwargs,
+                **google_kwargs,
             )
 
         elif provider in PROVIDER_BASE_URLS:
@@ -109,7 +119,7 @@ class LLMGateway:
                 model=model,
                 temperature=temperature,
                 base_url=base_url or PROVIDER_BASE_URLS[provider],
-                **timeout_kwargs,
+                **extra_kwargs,
             )
 
         else:

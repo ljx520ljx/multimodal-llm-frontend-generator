@@ -27,12 +27,15 @@ class Component(BaseModel):
 
 
 class ComponentList(BaseModel):
-    """Component detection result."""
+    """Component detection result.
 
-    components: list[Component] = Field(
-        description="List of detected components"
-    )
+    Field order: summary before components to avoid LLM output truncation.
+    """
+
     summary: str = Field(
         default="",
-        description="Brief summary of the components"
+        description="One-sentence summary of detected components, e.g. '识别出导航栏、搜索框、商品卡片等12个组件'"
+    )
+    components: list[Component] = Field(
+        description="List of detected components"
     )

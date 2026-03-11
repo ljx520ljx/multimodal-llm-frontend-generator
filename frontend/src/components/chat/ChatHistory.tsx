@@ -190,7 +190,7 @@ function UserMessage({ message }: { message: ChatMessage }) {
 
 // 检测消息类型
 function getMessageType(content: string): 'success' | 'warning' | 'error' | 'normal' {
-  if (content.includes('✅') || content.includes('代码已更新') || content.includes('代码生成完成')) {
+  if (content.includes('✅') || content.includes('代码已更新') || content.includes('代码生成完成') || content.includes('原型生成完成') || content.includes('原型重新生成完成')) {
     return 'success';
   }
   if (content.includes('⚠️') || content.includes('格式异常')) {

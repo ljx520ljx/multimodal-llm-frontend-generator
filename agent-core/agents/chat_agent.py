@@ -78,6 +78,12 @@ class ChatAgent:
                         event=SSEEventType.THINKING,
                         data={"content": thinking_match.group(1).strip()},
                     )
+                elif code:
+                    # Fallback: LLM 直接输出代码没有解释，生成简要说明
+                    yield SSEEvent(
+                        event=SSEEventType.THINKING,
+                        data={"content": "已根据您的需求完成代码修改。"},
+                    )
 
                 # Emit code
                 if code:
