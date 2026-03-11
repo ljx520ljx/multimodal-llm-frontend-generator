@@ -74,6 +74,18 @@ class Settings(BaseSettings):
     kimi_model: str = "moonshot-v1-32k"
 
     # ===========================================
+    # Agent-specific provider overrides (optional)
+    # If set, the agent uses this provider's api_key/base_url
+    # instead of the global LLM_PROVIDER
+    # ===========================================
+    chat_agent_provider: Optional[str] = None
+    layout_agent_provider: Optional[str] = None
+    component_agent_provider: Optional[str] = None
+    interaction_agent_provider: Optional[str] = None
+    codegen_agent_provider: Optional[str] = None
+    validator_agent_provider: Optional[str] = None
+
+    # ===========================================
     # Agent-specific model overrides (optional)
     # If not set, uses default llm_provider + model
     # ===========================================
@@ -105,6 +117,9 @@ class Settings(BaseSettings):
     # Code-generation agents need higher limits for full HTML output
     # ===========================================
     default_max_tokens: Optional[int] = None  # None = use model default
+    layout_agent_max_tokens: int = 8192
+    component_agent_max_tokens: int = 8192
+    interaction_agent_max_tokens: int = 8192
     codegen_agent_max_tokens: int = 16384
     chat_agent_max_tokens: int = 16384
 
@@ -125,8 +140,8 @@ class Settings(BaseSettings):
         Returns:
             dict with keys: provider, api_key, model, base_url
         """
-        provider = self.llm_provider
-        configs = {
+        # Per-provider credential configs
+        provider_configs = {
             "openai": {
                 "api_key": self.openai_api_key,
                 "model": self.openai_model,
@@ -164,7 +179,23 @@ class Settings(BaseSettings):
             },
         }
 
-        config = {"provider": provider, **configs[provider]}
+        # Determine provider: per-agent override > global default
+        agent_provider_overrides = {
+            "chat": self.chat_agent_provider,
+            "layout": self.layout_agent_provider,
+            "component": self.component_agent_provider,
+            "interaction": self.interaction_agent_provider,
+            "codegen": self.codegen_agent_provider,
+            "validator": self.validator_agent_provider,
+        }
+
+        provider = self.llm_provider
+        if agent_type != "default" and agent_type in agent_provider_overrides:
+            override_provider = agent_provider_overrides[agent_type]
+            if override_provider:
+                provider = override_provider
+
+        config = {"provider": provider, **provider_configs[provider]}
 
         # Apply agent-specific model override if configured
         agent_model_overrides = {
@@ -200,6 +231,9 @@ class Settings(BaseSettings):
 
         # Apply agent-specific max_tokens
         agent_max_tokens_overrides = {
+            "layout": self.layout_agent_max_tokens,
+            "component": self.component_agent_max_tokens,
+            "interaction": self.interaction_agent_max_tokens,
             "codegen": self.codegen_agent_max_tokens,
             "chat": self.chat_agent_max_tokens,
         }

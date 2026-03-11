@@ -6,6 +6,7 @@ tags:
   - analysis
 llm:
   temperature: 0.2
+  max_tokens: 8192
 input:
   - images
   - layout_info

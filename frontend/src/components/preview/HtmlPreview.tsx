@@ -50,6 +50,9 @@ const ANNOTATION_SCRIPT = `
   let annotationMode = false;
   let hoveredElement = null;
 
+  // 阻止 JS 导航（window.open, window.location 赋值等）
+  window.open = function() { return null; };
+
   // 生成元素的 CSS 选择器
   function getSelector(el) {
     if (el.id) return '#' + el.id;
@@ -119,18 +122,24 @@ const ANNOTATION_SCRIPT = `
     highlightElement(e.target);
   });
 
-  // 拦截所有链接点击，防止 iframe 内导航
+  // 拦截所有可能导致导航的点击，防止 iframe 内导航
   document.addEventListener('click', function(e) {
     const link = e.target.closest('a[href]');
     if (link) {
       const href = link.getAttribute('href');
-      // 阻止外部链接和锚点链接导航
-      if (href && (href.startsWith('http') || href.startsWith('/') || href.startsWith('#'))) {
+      // 阻止所有链接导航（外部链接、绝对路径、锚点、空链接等）
+      // 只放行 Alpine.js 内部状态切换（无 href 的按钮、@click 处理的元素）
+      if (href !== null && href !== undefined) {
         e.preventDefault();
-        // 如果不是标注模式，可以提示用户
-        if (!annotationMode) {
-          // 原型预览模式下链接已禁用
-        }
+      }
+    }
+
+    // 拦截表单提交导航
+    const form = e.target.closest('form');
+    if (form) {
+      const action = form.getAttribute('action');
+      if (action && (action.startsWith('http') || action.startsWith('/'))) {
+        e.preventDefault();
       }
     }
 
@@ -310,7 +319,7 @@ ${finalHtml}
       <iframe
         ref={iframeRef}
         className="flex-1 w-full border-0"
-        sandbox="allow-scripts allow-same-origin"
+        sandbox="allow-scripts"
         onLoad={handleLoad}
         title="原型预览"
       />
