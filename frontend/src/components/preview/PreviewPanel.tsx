@@ -8,6 +8,8 @@ import { CodePanel } from '@/components/editor';
 import { Skeleton } from '@/components/ui';
 import { HtmlPreview, type SelectedElementInfo } from './HtmlPreview';
 import { useChat } from '@/lib/hooks/useChat';
+import { useGeneration } from '@/lib/hooks/useGeneration';
+import { ShareButton } from './ShareButton';
 
 export function PreviewPanel() {
   const status = useProjectStore((state) => state.status);
@@ -23,6 +25,7 @@ export function PreviewPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { sendMessage } = useChat();
+  const { regenerate } = useGeneration();
 
   const hasCode = !!generatedCode?.code;
   const isGenerating = status === 'generating';
@@ -118,6 +121,7 @@ export function PreviewPanel() {
               <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700">
                 可交互
               </span>
+              <ShareButton />
               {/* 标注模式按钮 */}
               <button
                 onClick={handleToggleAnnotation}
@@ -160,6 +164,16 @@ export function PreviewPanel() {
             <p className="mt-2 max-w-md text-center text-xs text-red-600">
               {errorMessage || '请检查网络连接后重试'}
             </p>
+            <button
+              onClick={regenerate}
+              className="mt-4 flex items-center gap-1.5 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M1 4v6h6M23 20v-6h-6" />
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+              </svg>
+              重新生成
+            </button>
           </div>
         ) : isGenerating && !hasCode ? (
           <div className="flex h-full flex-col items-center justify-center">

@@ -36,6 +36,26 @@ func handleError(c *gin.Context, err error) {
 			Code:    ErrCodeNoCodeGenerated,
 			Message: e.Error(),
 		})
+	case *service.ErrAgentRateLimited:
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{
+			Code:    ErrCodeRateLimited,
+			Message: e.Error(),
+		})
+	case *service.ErrAgentUnavailable:
+		c.JSON(http.StatusServiceUnavailable, ErrorResponse{
+			Code:    ErrCodeAgentUnavailable,
+			Message: e.Error(),
+		})
+	case *service.ErrAgentTimeout:
+		c.JSON(http.StatusGatewayTimeout, ErrorResponse{
+			Code:    ErrCodeAgentTimeout,
+			Message: e.Error(),
+		})
+	case *service.ErrAgentError:
+		c.JSON(http.StatusBadGateway, ErrorResponse{
+			Code:    ErrCodeAgentError,
+			Message: e.Error(),
+		})
 	default:
 		c.JSON(http.StatusInternalServerError, ErrorResponse{
 			Code:    ErrCodeGenerationFailed,

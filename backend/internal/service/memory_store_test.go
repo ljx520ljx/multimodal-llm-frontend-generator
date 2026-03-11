@@ -7,7 +7,7 @@ import (
 )
 
 func TestMemoryStore_Create(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -28,7 +28,7 @@ func TestMemoryStore_Create(t *testing.T) {
 }
 
 func TestMemoryStore_Get(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -47,7 +47,7 @@ func TestMemoryStore_Get(t *testing.T) {
 }
 
 func TestMemoryStore_Get_NotFound(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -63,7 +63,7 @@ func TestMemoryStore_Get_NotFound(t *testing.T) {
 }
 
 func TestMemoryStore_AddImage(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -95,7 +95,7 @@ func TestMemoryStore_AddImage(t *testing.T) {
 }
 
 func TestMemoryStore_AddImage_MultipleImages(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -125,7 +125,7 @@ func TestMemoryStore_AddImage_MultipleImages(t *testing.T) {
 }
 
 func TestMemoryStore_GetImages(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -154,7 +154,7 @@ func TestMemoryStore_GetImages(t *testing.T) {
 }
 
 func TestMemoryStore_GetImages_NotFound(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -173,7 +173,7 @@ func TestMemoryStore_GetImages_NotFound(t *testing.T) {
 }
 
 func TestMemoryStore_UpdateCode(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -192,7 +192,7 @@ func TestMemoryStore_UpdateCode(t *testing.T) {
 }
 
 func TestMemoryStore_AddHistory(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -219,7 +219,7 @@ func TestMemoryStore_AddHistory(t *testing.T) {
 }
 
 func TestMemoryStore_GetHistory_WithLimit(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -251,7 +251,7 @@ func TestMemoryStore_GetHistory_WithLimit(t *testing.T) {
 }
 
 func TestMemoryStore_Delete(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	ctx := context.Background()
@@ -270,7 +270,7 @@ func TestMemoryStore_Delete(t *testing.T) {
 
 func TestMemoryStore_Cleanup(t *testing.T) {
 	// Use very short TTL for testing
-	store := NewMemoryStore(10 * time.Millisecond)
+	store := NewMemoryStore(10*time.Millisecond, 20)
 	defer store.Close()
 
 	ctx := context.Background()

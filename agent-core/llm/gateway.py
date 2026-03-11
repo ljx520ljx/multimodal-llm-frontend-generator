@@ -1,10 +1,14 @@
 """Unified LLM Gateway supporting multiple providers."""
 
+from __future__ import annotations
+
+import asyncio
 import json
 import logging
 import re
 from typing import Any, AsyncIterator, Optional, Type
 
+import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ValidationError
@@ -40,12 +44,14 @@ class LLMGateway:
         model: str,
         base_url: Optional[str] = None,
         temperature: float = 0.7,
+        request_timeout: Optional[int] = None,
     ):
         self.provider = provider.lower()
         self.model = model
         self.temperature = temperature
-        self.client = self._create_client(provider, api_key, model, base_url, temperature)
-        logger.info(f"LLMGateway initialized: provider={provider}, model={model}")
+        self.request_timeout = request_timeout
+        self.client = self._create_client(provider, api_key, model, base_url, temperature, request_timeout)
+        logger.info(f"LLMGateway initialized: provider={provider}, model={model}, request_timeout={request_timeout}s")
 
     def _create_client(
         self,
@@ -54,9 +60,18 @@ class LLMGateway:
         model: str,
         base_url: Optional[str],
         temperature: float,
+        request_timeout: Optional[int] = None,
     ) -> BaseChatModel:
-        """Create the appropriate LangChain client."""
+        """Create the appropriate LangChain client.
+
+        Args:
+            request_timeout: Per-request timeout in seconds. This is the innermost
+                timeout in the chain (LLM 60s < Agent 180s < Handler 240s < SSE 300s).
+        """
         provider = provider.lower()
+        timeout_kwargs: dict[str, Any] = {}
+        if request_timeout is not None:
+            timeout_kwargs["request_timeout"] = request_timeout
 
         if provider == "openai":
             from langchain_openai import ChatOpenAI
@@ -65,6 +80,7 @@ class LLMGateway:
                 model=model,
                 temperature=temperature,
                 base_url=base_url,
+                **timeout_kwargs,
             )
 
         elif provider == "anthropic":
@@ -73,6 +89,7 @@ class LLMGateway:
                 api_key=api_key,
                 model=model,
                 temperature=temperature,
+                **timeout_kwargs,
             )
 
         elif provider == "google":
@@ -81,6 +98,7 @@ class LLMGateway:
                 google_api_key=api_key,
                 model=model,
                 temperature=temperature,
+                **timeout_kwargs,
             )
 
         elif provider in PROVIDER_BASE_URLS:
@@ -91,16 +109,23 @@ class LLMGateway:
                 model=model,
                 temperature=temperature,
                 base_url=base_url or PROVIDER_BASE_URLS[provider],
+                **timeout_kwargs,
             )
 
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
-    async def chat(self, messages: list[dict[str, Any]]) -> str:
-        """Send a chat request and return the response content."""
+    async def chat(self, messages: list[dict[str, Any]], max_retries: int = 3) -> str:
+        """Send a chat request and return the response content.
+
+        Uses exponential backoff retry for transient errors.
+        """
         lc_messages = self._to_langchain_messages(messages)
-        response = await self.client.ainvoke(lc_messages)
-        return response.content
+        return await self._retry_with_backoff(
+            lambda: self.client.ainvoke(lc_messages),
+            max_retries=max_retries,
+            extract=lambda r: r.content,
+        )
 
     async def chat_stream(self, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
         """Send a chat request and stream the response."""
@@ -113,11 +138,13 @@ class LLMGateway:
         self,
         messages: list[dict[str, Any]],
         output_schema: Type[BaseModel],
+        max_retries: int = 3,
     ) -> BaseModel:
         """Send a chat request and return structured output.
 
         Uses prompt-based JSON extraction instead of function calling,
         which provides compatibility with more LLM providers.
+        Uses exponential backoff retry for transient errors.
         """
         # Generate JSON schema description for the prompt
         schema_description = self._generate_schema_description(output_schema)
@@ -125,19 +152,71 @@ class LLMGateway:
         # Add JSON format instruction to the last message
         enhanced_messages = self._add_json_instruction(messages, schema_description)
 
-        # Call LLM
-        response = await self.chat(enhanced_messages)
+        async def _call():
+            response = await self.chat(enhanced_messages, max_retries=1)
+            json_data = self._extract_json(response)
+            try:
+                return output_schema.model_validate(json_data)
+            except ValidationError as e:
+                logger.error(f"Failed to validate JSON response: {e}")
+                logger.error(f"Raw response: {response[:500]}...")
+                raise ValueError(f"LLM response does not match expected schema: {e}")
 
-        # Extract and parse JSON from response
-        json_data = self._extract_json(response)
+        return await self._retry_with_backoff(
+            _call,
+            max_retries=max_retries,
+            extract=lambda r: r,
+        )
 
-        # Validate with Pydantic schema
-        try:
-            return output_schema.model_validate(json_data)
-        except ValidationError as e:
-            logger.error(f"Failed to validate JSON response: {e}")
-            logger.error(f"Raw response: {response[:500]}...")
-            raise ValueError(f"LLM response does not match expected schema: {e}")
+    _RETRYABLE_EXCEPTIONS = (
+        ConnectionError,
+        TimeoutError,
+        httpx.ConnectError,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    )
+
+    async def _retry_with_backoff(
+        self,
+        call,
+        max_retries: int = 3,
+        initial_delay: float = 1.0,
+        extract=None,
+    ):
+        """Execute an async call with exponential backoff retry.
+
+        Retries on transient errors (connection, timeout, rate limit).
+        For 429 responses, uses Retry-After header if available.
+        """
+        last_exception = None
+        for attempt in range(max_retries):
+            try:
+                result = await call()
+                return extract(result) if extract else result
+            except self._RETRYABLE_EXCEPTIONS as e:
+                last_exception = e
+                delay = initial_delay * (2 ** attempt)
+                logger.warning(
+                    f"LLM call failed (attempt {attempt + 1}/{max_retries}): {e}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    last_exception = e
+                    retry_after = e.response.headers.get("Retry-After")
+                    delay = float(retry_after) if retry_after else initial_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Rate limited (429, attempt {attempt + 1}/{max_retries}). "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise
+            except Exception:
+                raise
+        raise last_exception
 
     def _generate_schema_description(self, schema: Type[BaseModel]) -> str:
         """Generate a human-readable schema description for the prompt.

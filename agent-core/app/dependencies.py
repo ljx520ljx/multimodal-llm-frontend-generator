@@ -1,5 +1,7 @@
 """Dependency injection for FastAPI."""
 
+from __future__ import annotations
+
 from functools import lru_cache
 from typing import Optional
 
@@ -48,6 +50,7 @@ def _create_llm_gateway(agent_type: AgentType = "default") -> LLMGateway:
         model=llm_config["model"],
         base_url=llm_config.get("base_url"),
         temperature=llm_config.get("temperature", 0.7),
+        request_timeout=settings.llm_request_timeout,
     )
 
 

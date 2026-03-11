@@ -60,9 +60,9 @@ def check_interaction(code: str) -> dict:
     # 提取初始状态
     for elem in x_data_elements:
         x_data = elem.get("x-data", "")
-        # 匹配 currentState: 'home' 或 state: 'home' 等模式
+        # 匹配 currentState/state/page/step/mode/view/tab/screen 等常见状态变量
         matches = re.findall(
-            r"(?:currentState|state)\s*:\s*['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]",
+            r"(?:currentState|state|page|currentPage|step|currentStep|mode|view|currentView|tab|activeTab|screen)\s*:\s*['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]",
             x_data,
         )
         defined_states.update(matches)
@@ -81,9 +81,9 @@ def check_interaction(code: str) -> dict:
 
     for elem in all_click_elements:
         click_handler = elem.get("@click") or elem.get("x-on:click", "")
-        # 提取目标状态
+        # 提取目标状态 - 匹配所有常见状态变量的赋值
         matches = re.findall(
-            r"(?:currentState|state)\s*=\s*['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]",
+            r"(?:currentState|state|page|currentPage|step|currentStep|mode|view|currentView|tab|activeTab|screen)\s*=\s*['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]",
             click_handler,
         )
         target_states.update(matches)
@@ -105,20 +105,42 @@ def check_interaction(code: str) -> dict:
         issues.append("缺少点击事件处理，无法触发状态转换")
 
     # 5. 检查死胡同状态
-    # 简单检查：如果某个状态的视图内没有任何 @click 事件
+    # 检查：如果某个状态的视图内没有任何状态转换事件
     dead_end_states = []
-    for elem in x_show_elements:
-        x_show = elem.get("x-show", "")
-        state_match = re.search(r"['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]", x_show)
-        if state_match:
-            state_name = state_match.group(1)
-            # 检查这个状态容器内是否有点击事件
-            inner_clicks = elem.find_all(attrs={"@click": True})
-            inner_x_on_clicks = elem.find_all(attrs={"x-on:click": True})
-            if not inner_clicks and not inner_x_on_clicks:
-                # 检查是否有全局导航（在状态容器外的导航）
-                # 如果只有一个状态，不算死胡同
-                if len(defined_states) > 1:
+    # Check if there are global navigation elements (outside x-show containers)
+    # that can transition away from any state
+    has_global_nav = False
+    for click_elem in all_click_elements:
+        # If a click element is NOT inside any x-show element, it's global nav
+        parent_x_show = click_elem.find_parent(attrs={"x-show": True})
+        if not parent_x_show:
+            handler = click_elem.get("@click") or click_elem.get("x-on:click", "")
+            if re.search(
+                r"(?:currentState|state|page|currentPage|step|currentStep|mode|view|currentView|tab|activeTab|screen)\s*=",
+                handler,
+            ):
+                has_global_nav = True
+                break
+
+    if not has_global_nav:
+        for elem in x_show_elements:
+            x_show = elem.get("x-show", "")
+            state_match = re.search(r"['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]", x_show)
+            if state_match:
+                state_name = state_match.group(1)
+                # 检查这个状态容器内是否有状态转换的点击事件
+                inner_clicks = elem.find_all(attrs={"@click": True})
+                inner_x_on_clicks = elem.find_all(attrs={"x-on:click": True})
+                has_transition = False
+                for ic in inner_clicks + inner_x_on_clicks:
+                    handler = ic.get("@click") or ic.get("x-on:click", "")
+                    if re.search(
+                        r"(?:currentState|state|page|currentPage|step|currentStep|mode|view|currentView|tab|activeTab|screen)\s*=",
+                        handler,
+                    ):
+                        has_transition = True
+                        break
+                if not has_transition and len(defined_states) > 1:
                     dead_end_states.append(state_name)
 
     if dead_end_states:

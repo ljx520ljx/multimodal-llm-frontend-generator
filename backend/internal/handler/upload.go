@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"context"
+	"fmt"
+	"mime/multipart"
 	"net/http"
 
 	"multimodal-llm-frontend-generator/internal/service"
@@ -50,12 +53,9 @@ func (h *UploadHandler) Handle(c *gin.Context) {
 	if sessionID != "" {
 		session, err = h.sessionStore.Get(ctx, sessionID)
 		if err != nil {
-			// Create new session if not found
-			session, err = h.sessionStore.Create(ctx)
-			if err != nil {
-				handleError(c, err)
-				return
-			}
+			// Session ID was provided but not found — return 404
+			handleError(c, err)
+			return
 		}
 	} else {
 		session, err = h.sessionStore.Create(ctx)
@@ -68,39 +68,43 @@ func (h *UploadHandler) Handle(c *gin.Context) {
 	// Process each image
 	var imageInfos []ImageInfo
 	for i, fileHeader := range files {
-		file, err := fileHeader.Open()
-		if err != nil {
-			handleValidationError(c, "Failed to open uploaded file")
-			return
-		}
-		defer file.Close()
-
-		// Process image
-		imageData, err := h.imageService.Process(ctx, file, fileHeader)
+		info, err := h.processOneImage(ctx, session.ID, fileHeader, i)
 		if err != nil {
 			handleError(c, err)
 			return
 		}
-
-		// Set order
-		imageData.Order = i
-
-		// Store image
-		err = h.sessionStore.AddImage(ctx, session.ID, imageData)
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-
-		imageInfos = append(imageInfos, ImageInfo{
-			ID:       imageData.ID,
-			Filename: imageData.Filename,
-			Order:    imageData.Order,
-		})
+		imageInfos = append(imageInfos, *info)
 	}
 
 	c.JSON(http.StatusOK, UploadResponse{
 		SessionID: session.ID,
 		Images:    imageInfos,
 	})
+}
+
+// processOneImage opens, processes, and stores a single uploaded image.
+// The file is closed before this function returns, avoiding defer-in-loop leaks.
+func (h *UploadHandler) processOneImage(ctx context.Context, sessionID string, fileHeader *multipart.FileHeader, order int) (*ImageInfo, error) {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open uploaded file: %w", err)
+	}
+	defer file.Close()
+
+	imageData, err := h.imageService.Process(ctx, file, fileHeader)
+	if err != nil {
+		return nil, err
+	}
+
+	imageData.Order = order
+
+	if err := h.sessionStore.AddImage(ctx, sessionID, imageData); err != nil {
+		return nil, err
+	}
+
+	return &ImageInfo{
+		ID:       imageData.ID,
+		Filename: imageData.Filename,
+		Order:    imageData.Order,
+	}, nil
 }

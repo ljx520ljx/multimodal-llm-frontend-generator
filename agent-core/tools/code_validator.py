@@ -1,21 +1,16 @@
 """Code Validator Tool - Validates generated HTML code."""
 
+from __future__ import annotations
+
 import re
 from typing import TYPE_CHECKING, Optional
 
 from bs4 import BeautifulSoup
-from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from schemas.interaction import InteractionSpec
 
-
-class ValidationResult(BaseModel):
-    """Result of HTML code validation."""
-
-    is_valid: bool = Field(description="Whether the code passed validation")
-    errors: list[str] = Field(default_factory=list, description="List of validation errors")
-    warnings: list[str] = Field(default_factory=list, description="Non-critical warnings")
+from schemas.code import ValidationError, ValidationResult
 
 
 class CodeValidator:
@@ -34,18 +29,22 @@ class CodeValidator:
             html: The HTML code to validate
 
         Returns:
-            ValidationResult with is_valid flag and any errors/warnings
+            ValidationResult with valid flag and any errors/warnings
         """
-        errors = []
-        warnings = []
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
 
         # Parse HTML
         try:
             soup = BeautifulSoup(html, "lxml")
         except Exception as e:
             return ValidationResult(
-                is_valid=False,
-                errors=[f"HTML 解析失败: {str(e)}"],
+                valid=False,
+                errors=[ValidationError(
+                    type="syntax",
+                    message=f"HTML 解析失败: {str(e)}",
+                    suggestion="检查 HTML 语法是否正确",
+                )],
             )
 
         # Check 1: Basic HTML structure
@@ -66,63 +65,80 @@ class CodeValidator:
         warnings.extend(transition_warnings)
 
         return ValidationResult(
-            is_valid=len(errors) == 0,
+            valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
 
-    def _check_html_structure(self, soup: BeautifulSoup) -> list[str]:
+    def _check_html_structure(self, soup: BeautifulSoup) -> list[ValidationError]:
         """Check basic HTML structure."""
-        errors = []
+        errors: list[ValidationError] = []
 
-        # Check for DOCTYPE
         if not soup.find("html"):
-            errors.append("缺少 <html> 标签")
+            errors.append(ValidationError(
+                type="syntax", message="缺少 <html> 标签",
+                suggestion="添加 <html> 根标签",
+            ))
 
-        # Check for head
         if not soup.find("head"):
-            errors.append("缺少 <head> 标签")
+            errors.append(ValidationError(
+                type="syntax", message="缺少 <head> 标签",
+                suggestion="添加 <head> 标签并包含必要的 meta 信息",
+            ))
 
-        # Check for body
         if not soup.find("body"):
-            errors.append("缺少 <body> 标签")
+            errors.append(ValidationError(
+                type="syntax", message="缺少 <body> 标签",
+                suggestion="添加 <body> 标签",
+            ))
 
-        # Check for meta charset
         meta_charset = soup.find("meta", attrs={"charset": True})
         if not meta_charset:
-            errors.append("缺少 charset meta 标签")
+            errors.append(ValidationError(
+                type="syntax", message="缺少 charset meta 标签",
+                suggestion='在 <head> 中添加 <meta charset="UTF-8">',
+            ))
 
-        # Check for viewport meta
         meta_viewport = soup.find("meta", attrs={"name": "viewport"})
         if not meta_viewport:
-            errors.append("缺少 viewport meta 标签")
+            errors.append(ValidationError(
+                type="syntax", message="缺少 viewport meta 标签",
+                suggestion='添加 <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+            ))
 
         return errors
 
-    def _check_required_scripts(self, soup: BeautifulSoup, html: str) -> list[str]:
+    def _check_required_scripts(self, soup: BeautifulSoup, html: str) -> list[ValidationError]:
         """Check for required CDN scripts."""
-        errors = []
+        errors: list[ValidationError] = []
 
-        # Check for Tailwind CSS
         if "tailwindcss" not in html and "tailwind" not in html.lower():
-            errors.append("缺少 Tailwind CSS CDN 引入")
+            errors.append(ValidationError(
+                type="syntax", message="缺少 Tailwind CSS CDN 引入",
+                suggestion='在 <head> 中添加 <script src="https://cdn.tailwindcss.com"></script>',
+            ))
 
-        # Check for Alpine.js
         if "alpinejs" not in html and "alpine" not in html.lower():
-            errors.append("缺少 Alpine.js CDN 引入")
+            errors.append(ValidationError(
+                type="alpine_error", message="缺少 Alpine.js CDN 引入",
+                suggestion='在 <head> 中添加 <script src="https://unpkg.com/alpinejs" defer></script>',
+            ))
 
         return errors
 
-    def _check_alpine_state_machine(self, soup: BeautifulSoup) -> tuple[list[str], list[str]]:
+    def _check_alpine_state_machine(self, soup: BeautifulSoup) -> tuple[list[ValidationError], list[str]]:
         """Check Alpine.js state machine implementation."""
-        errors = []
-        warnings = []
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
 
         # Find x-data elements
         x_data_elements = soup.find_all(attrs={"x-data": True})
 
         if not x_data_elements:
-            errors.append("缺少 x-data 状态管理，无法实现状态机")
+            errors.append(ValidationError(
+                type="missing_state", message="缺少 x-data 状态管理，无法实现状态机",
+                suggestion="添加 x-data 属性定义状态，如 x-data=\"{ currentState: 'home' }\"",
+            ))
             return errors, warnings
 
         # Check for currentState or similar state variable
@@ -197,8 +213,8 @@ class CodeValidator:
         Returns:
             ValidationResult with coverage information
         """
-        errors = []
-        warnings = []
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
 
         # Find all x-show conditions
         soup = BeautifulSoup(html, "lxml")
@@ -217,13 +233,17 @@ class CodeValidator:
         extra = implemented_states - expected_set
 
         if missing:
-            errors.append(f"缺少状态实现: {', '.join(missing)}")
+            errors.append(ValidationError(
+                type="missing_state",
+                message=f"缺少状态实现: {', '.join(missing)}",
+                suggestion=f"为以下状态添加 x-show 条件渲染: {', '.join(missing)}",
+            ))
 
         if extra:
             warnings.append(f"发现额外状态: {', '.join(extra)}")
 
         return ValidationResult(
-            is_valid=len(errors) == 0,
+            valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
@@ -245,8 +265,8 @@ class CodeValidator:
         Returns:
             ValidationResult with transition coverage information
         """
-        errors = []
-        warnings = []
+        errors: list[ValidationError] = []
+        warnings: list[str] = []
 
         soup = BeautifulSoup(html, "lxml")
 
@@ -262,17 +282,16 @@ class CodeValidator:
             # Extract target state from patterns like "currentState = 'search'" or "state = 'home'"
             matches = re.findall(r"(?:currentState|state)\s*=\s*['\"]([a-zA-Z_][a-zA-Z0-9_]*)['\"]", click_handler)
             for target_state in matches:
-                # We don't know the exact from_state from HTML, but we can check if target exists
                 implemented_transitions.add(target_state)
 
         # Check each transition
         for transition in interaction_spec.transitions:
-            # Check if there's a click handler that transitions to the target state
             if transition.to_state not in implemented_transitions:
-                errors.append(
-                    f"缺少状态转换: {transition.from_state} → {transition.to_state} "
-                    f"(触发器: {transition.trigger})"
-                )
+                errors.append(ValidationError(
+                    type="missing_transition",
+                    message=f"缺少状态转换: {transition.from_state} -> {transition.to_state} (触发器: {transition.trigger})",
+                    suggestion=f"添加 @click 事件将状态从 '{transition.from_state}' 转换到 '{transition.to_state}'",
+                ))
 
         # Check for dead-end states (states with no outgoing transitions)
         states_with_outgoing = set(t.from_state for t in interaction_spec.transitions)
@@ -283,7 +302,7 @@ class CodeValidator:
             warnings.append(f"以下状态没有出口转换（可能导致用户被困）: {', '.join(dead_ends)}")
 
         return ValidationResult(
-            is_valid=len(errors) == 0,
+            valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
@@ -323,7 +342,7 @@ class CodeValidator:
         warnings.extend(transitions_result.warnings)
 
         return ValidationResult(
-            is_valid=len(errors) == 0,
+            valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )

@@ -1,11 +1,33 @@
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "${PG_HOST_PORT:-5434}:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-app}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-app_password}
+      - POSTGRES_DB=${POSTGRES_DB:-prototype_platform}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-prototype_platform}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - app-network
+
   # Frontend (Next.js)
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # NEXT_PUBLIC_ vars are baked into JS at build time.
+        # Browser needs to reach backend via localhost, not Docker internal hostname.
+        - NEXT_PUBLIC_API_URL=http://localhost:8083
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8080
     depends_on:
       - backend
     networks:
@@ -15,29 +37,37 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8080:8080"
+      - "${BACKEND_HOST_PORT:-8083}:8080"
     environment:
       # Server
       - SERVER_PORT=8080
       - SERVER_MODE=production
       - ALLOWED_ORIGINS=http://localhost:3000,http://frontend:3000
+      # Database
+      - DATABASE_URL=postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app_password}@postgres:5432/${POSTGRES_DB:-prototype_platform}?sslmode=disable
       # LLM (use .env file for API keys)
       - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_TIMEOUT=${LLM_TIMEOUT:-60s}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-120s}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       # Agent Service
+      # Timeout chain (inner → outer): Python LLM 60s < AGENT_TIMEOUT 180s < HANDLER_TIMEOUT 240s < Frontend SSE 300s
       - AGENT_SERVICE_URL=http://agent:8081
-      - AGENT_TIMEOUT=30s
+      - AGENT_TIMEOUT=180s
+      - HANDLER_TIMEOUT=240s
       # Image Processing
       - IMAGE_MAX_SIZE=10485760
       - IMAGE_MAX_TOTAL=52428800
       - IMAGE_QUALITY=80
       - IMAGE_MAX_DIMENSION=2048
+      # Internal API auth (Go ↔ Python checkpoint communication)
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-}
       # Session
       - SESSION_TTL=1h
     depends_on:
+      postgres:
+        condition: service_healthy
       agent:
         condition: service_healthy
     networks:
@@ -58,6 +88,11 @@ services:
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
+      # Internal API auth (must match Go INTERNAL_API_TOKEN)
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-}
+      - BACKEND_URL=http://backend:8080
+      # LLM request timeout (innermost in the timeout chain)
+      - LLM_REQUEST_TIMEOUT=60
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 10s
@@ -66,6 +101,9 @@ services:
       start_period: 10s
     networks:
       - app-network
+
+volumes:
+  pgdata:
 
 networks:
   app-network:

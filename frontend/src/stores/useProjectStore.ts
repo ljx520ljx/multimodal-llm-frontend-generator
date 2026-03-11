@@ -25,6 +25,12 @@ interface ProjectState {
   // 编辑器状态
   activeFile: 'App.tsx' | 'styles.css';
 
+  // 生成模式
+  generationMode: 'fast' | 'quality';
+
+  // 分享状态
+  shareUrl: string | null;
+
   // 对话历史
   chatMessages: ChatMessage[];
 
@@ -58,6 +64,12 @@ interface ProjectState {
   // 编辑器操作
   setActiveFile: (file: 'App.tsx' | 'styles.css') => void;
 
+  // 生成模式操作
+  setGenerationMode: (mode: 'fast' | 'quality') => void;
+
+  // 分享操作
+  setShareUrl: (url: string | null) => void;
+
   // 对话历史操作
   addUserMessage: (text: string, images?: string[]) => void;
   addAssistantMessage: (content: string) => void;
@@ -77,6 +89,8 @@ const initialState = {
   status: 'idle' as GenerationStatus,
   errorMessage: null,
   activeFile: 'App.tsx' as const,
+  generationMode: 'fast' as const,
+  shareUrl: null as string | null,
   chatMessages: [] as ChatMessage[],
 };
 
@@ -106,11 +120,21 @@ export const useProjectStore = create<ProjectState>()(
           images: [...state.images, ...images],
         })),
       removeImage: (id) =>
-        set((state) => ({
-          images: state.images.filter((img) => img.id !== id),
-        })),
+        set((state) => {
+          const removed = state.images.find((img) => img.id === id);
+          if (removed?.preview) {
+            URL.revokeObjectURL(removed.preview);
+          }
+          return { images: state.images.filter((img) => img.id !== id) };
+        }),
       reorderImages: (images) => set({ images }),
-      clearImages: () => set({ images: [] }),
+      clearImages: () =>
+        set((state) => {
+          state.images.forEach((img) => {
+            if (img.preview) URL.revokeObjectURL(img.preview);
+          });
+          return { images: [] };
+        }),
 
       // 生成操作
       setStatus: (status) => set({ status }),
@@ -120,7 +144,7 @@ export const useProjectStore = create<ProjectState>()(
           thinkingContent: state.thinkingContent + content,
         })),
       setGeneratedCode: (code) =>
-        set({ generatedCode: code, status: 'completed' }),
+        set({ generatedCode: code }),
       updateCode: (code) =>
         set(() => ({
           generatedCode: { code, timestamp: Date.now() },
@@ -139,9 +163,11 @@ export const useProjectStore = create<ProjectState>()(
           chatMessages: [],
         }),
       startNewProject: () =>
-        set({
-          ...initialState,
-          // 清空所有状态，开始新原型
+        set((state) => {
+          state.images.forEach((img) => {
+            if (img.preview) URL.revokeObjectURL(img.preview);
+          });
+          return { ...initialState };
         }),
 
       // 图片ID操作
@@ -149,6 +175,12 @@ export const useProjectStore = create<ProjectState>()(
 
       // 编辑器操作
       setActiveFile: (file) => set({ activeFile: file }),
+
+      // 生成模式操作
+      setGenerationMode: (mode) => set({ generationMode: mode }),
+
+      // 分享操作
+      setShareUrl: (url) => set({ shareUrl: url }),
 
       // 对话历史操作
       addUserMessage: (text, images) =>
@@ -201,7 +233,11 @@ export const useProjectStore = create<ProjectState>()(
     }),
     {
       name: 'project-store',
-      partialize: () => ({}),
+      partialize: (state) => ({
+        sessionId: state.sessionId,
+        generationMode: state.generationMode,
+        codeExpanded: state.codeExpanded,
+      }),
     }
   )
 );

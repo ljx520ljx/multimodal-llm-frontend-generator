@@ -1,0 +1,16 @@
+name: component_detector
+version: "1.0"
+description: "识别设计稿中的所有 UI 组件，包括按钮、输入框、导航等"
+tags:
+  - pipeline
+  - analysis
+llm:
+  temperature: 0.2
+input:
+  - images
+  - layout_info
+output:
+  - component_info
+retry: 0
+dependencies:
+  - layout_analyzer

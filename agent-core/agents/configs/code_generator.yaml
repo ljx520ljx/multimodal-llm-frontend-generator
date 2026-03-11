@@ -1,0 +1,22 @@
+name: code_generator
+version: "1.0"
+description: "根据分析结果生成 HTML/Tailwind CSS/Alpine.js 代码"
+tags:
+  - pipeline
+  - generation
+llm:
+  temperature: 0.3
+  max_tokens: 8192
+input:
+  - images
+  - layout_info
+  - component_info
+  - interaction_info
+  - validation_errors
+output:
+  - generated_code
+retry: 3
+dependencies:
+  - layout_analyzer
+  - component_detector
+  - interaction_infer

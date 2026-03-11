@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"multimodal-llm-frontend-generator/internal/service"
 
@@ -13,12 +15,14 @@ import (
 // GenerateHandler handles code generation requests
 type GenerateHandler struct {
 	generateService service.GenerateService
+	handlerTimeout  time.Duration
 }
 
 // NewGenerateHandler creates a new GenerateHandler
-func NewGenerateHandler(generateService service.GenerateService) *GenerateHandler {
+func NewGenerateHandler(generateService service.GenerateService, handlerTimeout time.Duration) *GenerateHandler {
 	return &GenerateHandler{
 		generateService: generateService,
+		handlerTimeout:  handlerTimeout,
 	}
 }
 
@@ -36,7 +40,9 @@ func (h *GenerateHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	// Apply handler-level timeout (sits between Agent timeout and Frontend SSE timeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.handlerTimeout)
+	defer cancel()
 
 	// Start generation
 	eventChan, err := h.generateService.Generate(ctx, req.SessionID, req.ImageIDs, req.Framework)
@@ -79,8 +85,12 @@ func streamSSE(c *gin.Context, eventChan <-chan service.SSEEvent) {
 				continue
 			}
 
-			// Write SSE event
-			_, err = io.WriteString(c.Writer, "event: message\n")
+			// Write SSE event using the event's actual type
+			eventType := event.Type
+			if eventType == "" {
+				eventType = "message"
+			}
+			_, err = io.WriteString(c.Writer, "event: "+eventType+"\n")
 			if err != nil {
 				return
 			}

@@ -1,30 +1,37 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"multimodal-llm-frontend-generator/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
-// AgentGenerateRequest is the request for agent-based code generation
+// AgentGenerateRequest is the request for agent-based code generation.
+// Either image_ids or description must be provided.
 type AgentGenerateRequest struct {
-	SessionID string   `json:"session_id" binding:"required"`
-	ImageIDs  []string `json:"image_ids" binding:"required,min=1"`
+	SessionID   string   `json:"session_id" binding:"required"`
+	ImageIDs    []string `json:"image_ids"`
+	Description string   `json:"description"`
 }
 
 // AgentGenerateHandler handles code generation via Python Agent
 type AgentGenerateHandler struct {
 	agentGenerateService service.AgentGenerateService
+	handlerTimeout       time.Duration
 }
 
 // NewAgentGenerateHandler creates a new AgentGenerateHandler
-func NewAgentGenerateHandler(agentGenerateService service.AgentGenerateService) *AgentGenerateHandler {
+func NewAgentGenerateHandler(agentGenerateService service.AgentGenerateService, handlerTimeout time.Duration) *AgentGenerateHandler {
 	return &AgentGenerateHandler{
 		agentGenerateService: agentGenerateService,
+		handlerTimeout:       handlerTimeout,
 	}
 }
 
@@ -36,10 +43,18 @@ func (h *AgentGenerateHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	req.Description = strings.TrimSpace(req.Description)
+	if len(req.ImageIDs) == 0 && req.Description == "" {
+		handleValidationError(c, "Either image_ids or description is required")
+		return
+	}
+
+	// Apply handler-level timeout (sits between Agent timeout and Frontend SSE timeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.handlerTimeout)
+	defer cancel()
 
 	// Start generation via Python Agent
-	eventChan, err := h.agentGenerateService.Generate(ctx, req.SessionID, req.ImageIDs)
+	eventChan, err := h.agentGenerateService.Generate(ctx, req.SessionID, req.ImageIDs, req.Description)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -84,6 +99,10 @@ func streamAgentSSE(c *gin.Context, eventChan <-chan service.SSEEvent) {
 				eventType = "code"
 			case service.SSETypeThinking:
 				eventType = "thinking"
+			case service.SSETypeAgentStart:
+				eventType = "agent_start"
+			case service.SSETypeAgentResult:
+				eventType = "agent_result"
 			default:
 				eventType = "message"
 			}
@@ -94,11 +113,15 @@ func streamAgentSSE(c *gin.Context, eventChan <-chan service.SSEEvent) {
 				return
 			}
 
-			// Marshal data
-			data, err := json.Marshal(map[string]interface{}{
+			// Marshal data (include agent field only when present)
+			payload := map[string]any{
 				"type":    event.Type,
 				"content": event.Content,
-			})
+			}
+			if event.Agent != "" {
+				payload["agent"] = event.Agent
+			}
+			data, err := json.Marshal(payload)
 			if err != nil {
 				continue
 			}

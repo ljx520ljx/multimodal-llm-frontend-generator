@@ -1,7 +1,8 @@
 """Code Generator Agent - Generates HTML/Tailwind/Alpine.js code."""
 
+from __future__ import annotations
+
 import json
-import re
 from typing import AsyncIterator, Optional, Type
 
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from schemas.common import SSEEvent, SSEEventType
 from schemas.component import ComponentList
 from schemas.interaction import InteractionSpec
 from schemas.layout import LayoutInfo
+from utils.code_extractor import extract_html_code
 
 
 class CodeGeneratorAgent(BaseAgent):
@@ -159,29 +161,7 @@ class CodeGeneratorAgent(BaseAgent):
             raise
 
     def _extract_html_code(self, response: str) -> str:
-        """Extract HTML code from LLM response.
-
-        Handles markdown code blocks with ```html ... ``` format.
-
-        Args:
-            response: Raw LLM response text
-
-        Returns:
-            Extracted HTML code
-        """
-        # Try to extract from markdown code block
-        html_pattern = r"```html\s*([\s\S]*?)\s*```"
-        match = re.search(html_pattern, response)
-
-        if match:
-            return match.group(1).strip()
-
-        # Try generic code block
-        code_pattern = r"```\s*([\s\S]*?)\s*```"
-        match = re.search(code_pattern, response)
-
-        if match:
-            return match.group(1).strip()
-
+        """Extract HTML code from LLM response."""
+        code = extract_html_code(response)
         # Return as-is if no code block found
-        return response.strip()
+        return code if code else response.strip()

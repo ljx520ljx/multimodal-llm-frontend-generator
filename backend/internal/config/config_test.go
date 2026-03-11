@@ -140,9 +140,9 @@ func TestLoad_InvalidLLMTimeout(t *testing.T) {
 
 	cfg := Load()
 
-	// Should fall back to default
-	if cfg.LLMTimeout != 5*time.Minute {
-		t.Errorf("expected default LLMTimeout 5m, got %v", cfg.LLMTimeout)
+	// Should fall back to default (120s)
+	if cfg.LLMTimeout != 120*time.Second {
+		t.Errorf("expected default LLMTimeout 120s, got %v", cfg.LLMTimeout)
 	}
 }
 

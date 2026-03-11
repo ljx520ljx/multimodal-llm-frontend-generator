@@ -1,6 +1,5 @@
 """Chat API route - Handles conversational code modification requests."""
 
-import json
 import logging
 from typing import AsyncIterator
 
@@ -55,7 +54,7 @@ async def chat_event_generator(
             images=images,
             history=request.history,
         ):
-            yield format_sse(event)
+            yield event.to_sse()
 
     except Exception as e:
         logger.exception(f"Chat error for session {request.session_id}")
@@ -63,28 +62,14 @@ async def chat_event_generator(
             event=SSEEventType.ERROR,
             data={"error": str(e)},
         )
-        yield format_sse(error_event)
+        yield error_event.to_sse()
 
         # Send done event even on error
         done_event = SSEEvent(
             event=SSEEventType.DONE,
             data={"success": False},
         )
-        yield format_sse(done_event)
-
-
-def format_sse(event: SSEEvent) -> str:
-    """Format an SSE event as a string.
-
-    Args:
-        event: SSE event object
-
-    Returns:
-        SSE formatted string
-    """
-    event_type = event.event.value if hasattr(event.event, "value") else str(event.event)
-    data = json.dumps(event.data, ensure_ascii=False)
-    return f"event: {event_type}\ndata: {data}\n\n"
+        yield done_event.to_sse()
 
 
 @router.post("/chat")

@@ -46,12 +46,33 @@ type Config struct {
 	ImageMaxDimension int      // Max width/height in pixels (default 2048)
 	ImageAllowedTypes []string // Allowed MIME types
 
+	// Database
+	DatabaseURL string // PostgreSQL connection URL (empty = use MemoryStore)
+
+	// Auth
+	JWTSecret          string        // JWT signing secret
+	JWTExpiry          time.Duration // JWT token expiry (default 24h)
+	GitHubClientID     string        // GitHub OAuth2 client ID
+	GitHubClientSecret string        // GitHub OAuth2 client secret
+	BaseURL            string        // Public base URL for OAuth callbacks
+
 	// Session
-	SessionTTL time.Duration // Session expiration time (default 30 minutes)
+	SessionTTL          time.Duration // Session expiration time (default 30 minutes)
+	SessionHistoryLimit int           // Max number of history entries per session (default 20)
 
 	// Agent Service (Python)
 	AgentServiceURL string        // Agent service URL (default http://localhost:8081)
-	AgentTimeout    time.Duration // Agent service timeout (default 60s)
+	AgentTimeout    time.Duration // Agent service timeout (default 180s)
+	HandlerTimeout  time.Duration // Handler-level context timeout for SSE endpoints (default 240s)
+
+	// Rate Limiting
+	RateLimitIPRate       float64       // Requests per second per IP (default 10)
+	RateLimitIPBurst      int           // Max burst size per IP (default 20)
+	RateLimitIPCleanupTTL time.Duration // TTL for idle IP entries (default 10m)
+	RateLimitMaxConcurrent int          // Max concurrent requests for heavy endpoints (default 20)
+
+	// Internal API
+	InternalAPIToken string // Token for inter-service communication
 }
 
 func Load() *Config {
@@ -65,7 +86,7 @@ func Load() *Config {
 
 	// LLM defaults
 	viper.SetDefault("LLM_PROVIDER", "openai")
-	viper.SetDefault("LLM_TIMEOUT", "300s")
+	viper.SetDefault("LLM_TIMEOUT", "120s")
 	viper.SetDefault("OPENAI_MODEL", "gpt-4o")
 	viper.SetDefault("DEEPSEEK_MODEL", "deepseek-chat")
 
@@ -79,12 +100,34 @@ func Load() *Config {
 	viper.SetDefault("IMAGE_MAX_DIMENSION", 2048)          // 2048px
 	viper.SetDefault("IMAGE_ALLOWED_TYPES", "image/png,image/jpeg,image/webp")
 
+	// Database defaults
+	viper.SetDefault("DATABASE_URL", "")
+
+	// Auth defaults
+	viper.SetDefault("JWT_SECRET", "")
+	viper.SetDefault("JWT_EXPIRY", "24h")
+	viper.SetDefault("GITHUB_CLIENT_ID", "")
+	viper.SetDefault("GITHUB_CLIENT_SECRET", "")
+	viper.SetDefault("BASE_URL", "http://localhost:8080")
+
 	// Session defaults
 	viper.SetDefault("SESSION_TTL", "30m")
+	viper.SetDefault("SESSION_HISTORY_LIMIT", 20)
 
 	// Agent service defaults
+	// Timeout chain (inner → outer): Python LLM 60s < AGENT_TIMEOUT 180s < HANDLER_TIMEOUT 240s < Frontend SSE 300s
 	viper.SetDefault("AGENT_SERVICE_URL", "http://localhost:8081")
-	viper.SetDefault("AGENT_TIMEOUT", "60s")
+	viper.SetDefault("AGENT_TIMEOUT", "180s")
+	viper.SetDefault("HANDLER_TIMEOUT", "240s")
+
+	// Rate limiting defaults
+	viper.SetDefault("RATE_LIMIT_IP_RATE", 10.0)
+	viper.SetDefault("RATE_LIMIT_IP_BURST", 20)
+	viper.SetDefault("RATE_LIMIT_IP_CLEANUP_TTL", "10m")
+	viper.SetDefault("RATE_LIMIT_MAX_CONCURRENT", 20)
+
+	// Internal API defaults
+	viper.SetDefault("INTERNAL_API_TOKEN", "")
 
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("No .env file found, using environment variables and defaults")
@@ -98,7 +141,7 @@ func Load() *Config {
 
 	timeout, err := time.ParseDuration(viper.GetString("LLM_TIMEOUT"))
 	if err != nil {
-		timeout = 5 * time.Minute
+		timeout = 120 * time.Second
 	}
 
 	sessionTTL, err := time.ParseDuration(viper.GetString("SESSION_TTL"))
@@ -108,7 +151,22 @@ func Load() *Config {
 
 	agentTimeout, err := time.ParseDuration(viper.GetString("AGENT_TIMEOUT"))
 	if err != nil {
-		agentTimeout = 60 * time.Second
+		agentTimeout = 180 * time.Second
+	}
+
+	handlerTimeout, err := time.ParseDuration(viper.GetString("HANDLER_TIMEOUT"))
+	if err != nil {
+		handlerTimeout = 240 * time.Second
+	}
+
+	jwtExpiry, err := time.ParseDuration(viper.GetString("JWT_EXPIRY"))
+	if err != nil {
+		jwtExpiry = 24 * time.Hour
+	}
+
+	rateLimitCleanupTTL, err := time.ParseDuration(viper.GetString("RATE_LIMIT_IP_CLEANUP_TTL"))
+	if err != nil {
+		rateLimitCleanupTTL = 10 * time.Minute
 	}
 
 	// Parse allowed image types
@@ -147,10 +205,27 @@ func Load() *Config {
 		ImageMaxDimension: viper.GetInt("IMAGE_MAX_DIMENSION"),
 		ImageAllowedTypes: allowedTypes,
 
-		SessionTTL: sessionTTL,
+		DatabaseURL: viper.GetString("DATABASE_URL"),
+
+		JWTSecret:          viper.GetString("JWT_SECRET"),
+		JWTExpiry:          jwtExpiry,
+		GitHubClientID:     viper.GetString("GITHUB_CLIENT_ID"),
+		GitHubClientSecret: viper.GetString("GITHUB_CLIENT_SECRET"),
+		BaseURL:            viper.GetString("BASE_URL"),
+
+		SessionTTL:          sessionTTL,
+		SessionHistoryLimit: viper.GetInt("SESSION_HISTORY_LIMIT"),
 
 		AgentServiceURL: viper.GetString("AGENT_SERVICE_URL"),
 		AgentTimeout:    agentTimeout,
+		HandlerTimeout:  handlerTimeout,
+
+		RateLimitIPRate:        viper.GetFloat64("RATE_LIMIT_IP_RATE"),
+		RateLimitIPBurst:       viper.GetInt("RATE_LIMIT_IP_BURST"),
+		RateLimitIPCleanupTTL:  rateLimitCleanupTTL,
+		RateLimitMaxConcurrent: viper.GetInt("RATE_LIMIT_MAX_CONCURRENT"),
+
+		InternalAPIToken: viper.GetString("INTERNAL_API_TOKEN"),
 	}
 }
 

@@ -141,14 +141,12 @@ func newGeminiGateway(cfg GatewayConfig) (LLMGateway, error) {
 	if cfg.GeminiAPIKey == "" {
 		return nil, types.ErrInvalidAPIKey
 	}
-	// TODO: Implement Gemini gateway
-	return &placeholderGateway{provider: ProviderGemini}, nil
+	return nil, fmt.Errorf("provider %s is not yet implemented in Go backend; use agent-core (Python) for Gemini support", ProviderGemini)
 }
 
 func newAnthropicGateway(cfg GatewayConfig) (LLMGateway, error) {
 	if cfg.AnthropicAPIKey == "" {
 		return nil, types.ErrInvalidAPIKey
 	}
-	// TODO: Implement Anthropic gateway
-	return &placeholderGateway{provider: ProviderAnthropic}, nil
+	return nil, fmt.Errorf("provider %s is not yet implemented in Go backend; use agent-core (Python) for Anthropic support", ProviderAnthropic)
 }

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"regexp"
 	"strings"
@@ -79,7 +78,9 @@ func (s *generateService) Generate(ctx context.Context, sessionID string, imageI
 
 	// Update session framework
 	session.Framework = framework
-	s.sessionStore.Update(ctx, session)
+	if err := s.sessionStore.Update(ctx, session); err != nil {
+		return nil, err
+	}
 
 	// Build prompt
 	systemPrompt := s.promptService.BuildSystemPrompt(framework)
@@ -110,7 +111,7 @@ func (s *generateService) Generate(ctx context.Context, sessionID string, imageI
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Process LLM output
 	go func() {
@@ -143,11 +144,13 @@ func (s *generateService) Chat(ctx context.Context, sessionID string, message st
 	log.Printf("[Chat] Session %s has %d images for reference", sessionID, len(session.Images))
 
 	// Add user message to history
-	s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+	if err := s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
 		Role:    "user",
 		Content: message,
 		Type:    "text",
-	})
+	}); err != nil {
+		log.Printf("[Chat] Failed to add user message to history: %v", err)
+	}
 
 	// If agentClient is available, use Python Agent for chat (with tool calling support)
 	if s.agentClient != nil {
@@ -195,7 +198,7 @@ func (s *generateService) chatViaAgent(ctx context.Context, sessionID string, se
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Forward agent events and save code on completion
 	go func() {
@@ -222,24 +225,23 @@ func (s *generateService) processAgentChatOutput(ctx context.Context, sessionID 
 		outChan <- event
 
 		// Capture code content for saving
-		if event.Type == SSETypeCode {
-			// Parse JSON to extract html field
-			var codeData map[string]interface{}
-			if err := json.Unmarshal([]byte(event.Content), &codeData); err == nil {
-				if html, ok := codeData["html"].(string); ok {
-					codeContent = html
-				}
-			}
+		// Note: event.Content is already extracted HTML (parseSSEData handles JSON parsing)
+		if event.Type == SSETypeCode && event.Content != "" {
+			codeContent = event.Content
 		}
 
 		// On done, save the code
 		if event.Type == SSETypeDone && codeContent != "" {
-			s.sessionStore.UpdateCode(ctx, sessionID, codeContent)
-			s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+			if err := s.sessionStore.UpdateCode(ctx, sessionID, codeContent); err != nil {
+				log.Printf("[Chat] Failed to save code: %v", err)
+			}
+			if err := s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
 				Role:    "assistant",
 				Content: codeContent,
 				Type:    "code",
-			})
+			}); err != nil {
+				log.Printf("[Chat] Failed to add assistant history: %v", err)
+			}
 		}
 	}
 }
@@ -268,7 +270,7 @@ func (s *generateService) chatViaLLM(ctx context.Context, sessionID string, sess
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Process LLM output
 	go func() {
@@ -306,13 +308,17 @@ func (s *generateService) processLLMOutput(ctx context.Context, sessionID string
 			// Extract and save code
 			code := s.extractCode(fullContent.String())
 			if code != "" {
-				s.sessionStore.UpdateCode(ctx, sessionID, code)
+				if err := s.sessionStore.UpdateCode(ctx, sessionID, code); err != nil {
+					log.Printf("[Generate] Failed to save code: %v", err)
+				}
 				// Add assistant response to history
-				s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
+				if err := s.sessionStore.AddHistory(ctx, sessionID, HistoryEntry{
 					Role:    "assistant",
 					Content: code,
 					Type:    "code",
-				})
+				}); err != nil {
+					log.Printf("[Generate] Failed to add assistant history: %v", err)
+				}
 			}
 			outChan <- SSEEvent{Type: SSETypeDone, Content: ""}
 			return

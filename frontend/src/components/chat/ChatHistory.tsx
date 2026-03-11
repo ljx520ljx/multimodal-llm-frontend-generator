@@ -70,8 +70,8 @@ function parseContent(content: string): ParsedContent {
     textContent = textContent.substring(0, codeStartIndex);
   }
 
-  // 3. 移除残留的 HTML 标签
-  textContent = textContent.replace(/<\/?(html|head|body|div|script|style)[^>]*>/gi, '');
+  // 3. 移除残留的 HTML 标签（所有标签，保留 <thinking>）
+  textContent = textContent.replace(/<\/?(?!thinking)[a-zA-Z][^>]*>/gi, '');
 
   // 4. 移除 AI 常见的过渡语句（包括不完整的）
   textContent = textContent
@@ -94,15 +94,23 @@ function parseContent(content: string): ParsedContent {
   // 清理多余空行
   textContent = textContent.replace(/\n{3,}/g, '\n\n').trim();
 
+  // 6. 提取完成/状态消息（无论何种格式，这些始终显示为 mainContent）
+  const donePattern = /^.*(原型.*生成完成|代码.*已生成|代码已更新|请在右侧预览|未能生成代码|请重试或调整).*$/gm;
+  const doneMatches = textContent.match(donePattern) || [];
+  if (doneMatches.length > 0) {
+    textContent = textContent.replace(donePattern, '').replace(/\n{3,}/g, '\n').trim();
+  }
+  const doneText = doneMatches.join('\n').trim();
+
   // 提取 <thinking> 标签内容
   const thinkingMatch = textContent.match(/<thinking>([\s\S]*?)(?:<\/thinking>|$)/);
   if (thinkingMatch) {
-    const mainContent = textContent
+    const remainingContent = textContent
       .replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/, '')
       .trim();
     return {
       thinkingContent: thinkingMatch[0],
-      mainContent,
+      mainContent: (remainingContent + (doneText ? '\n' + doneText : '')).trim(),
       hasCode,
       isGeneratingCode,
     };
@@ -111,10 +119,11 @@ function parseContent(content: string): ParsedContent {
   // 检测是否包含 Step 格式的分析内容
   const hasStepContent = /Step\s*\d+[：:]/i.test(textContent);
   if (hasStepContent) {
-    // Step 内容全部作为思考内容
+    // Step 内容 → thinkingContent (由 ThinkingSteps 渲染)
+    // done 消息 → mainContent (始终显示)
     return {
       thinkingContent: textContent,
-      mainContent: '',
+      mainContent: doneText,
       hasCode,
       isGeneratingCode,
     };
@@ -123,22 +132,22 @@ function parseContent(content: string): ParsedContent {
   // 没有找到思考内容格式
   // 如果内容很短或是状态消息，作为主内容显示
   // 否则可能是未格式化的分析内容，作为思考内容
-  const isStatusMessage = textContent.includes('✅') || textContent.includes('⚠️') || textContent.includes('错误');
-  const isShortMessage = textContent.length < 100;
+  const isStatusMessage = /[✅✓⚠️❌]/.test(textContent) || textContent.includes('错误') || textContent.includes('失败');
+  const isShortMessage = textContent.length < 200;
 
   if (isStatusMessage || isShortMessage) {
     return {
       thinkingContent: '',
-      mainContent: textContent,
+      mainContent: (textContent + (doneText ? '\n' + doneText : '')).trim(),
       hasCode,
       isGeneratingCode,
     };
   }
 
-  // 较长的内容可能是分析过程，作为思考内容
+  // 较长的内容可能是分析过程，作为思考内容；done 消息始终作为 mainContent
   return {
     thinkingContent: textContent,
-    mainContent: '',
+    mainContent: doneText,
     hasCode,
     isGeneratingCode,
   };

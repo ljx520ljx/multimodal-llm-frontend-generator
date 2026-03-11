@@ -40,7 +40,7 @@ export function useChat() {
       abortControllerRef.current = new AbortController();
 
       try {
-        const response = await api.chat(sessionId, message);
+        const response = await api.chat(sessionId, message, abortControllerRef.current!.signal);
 
         let codeBuffer = '';
 
@@ -86,7 +86,7 @@ export function useChat() {
         });
       } catch (error) {
         if ((error as Error).name === 'AbortError') {
-          setStatus('completed');
+          setStatus('idle');
           return;
         }
         const message = error instanceof Error ? error.message : '发送失败';

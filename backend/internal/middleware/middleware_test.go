@@ -196,8 +196,7 @@ func TestRecovery_WithPanicError(t *testing.T) {
 	router := gin.New()
 	router.Use(Recovery())
 	router.GET("/panic", func(c *gin.Context) {
-		var s []int
-		_ = s[10] // This will cause an index out of range panic
+		panic("index out of range")
 	})
 
 	req := httptest.NewRequest("GET", "/panic", nil)

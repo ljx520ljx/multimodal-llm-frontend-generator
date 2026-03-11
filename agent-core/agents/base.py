@@ -1,12 +1,29 @@
 """Base agent class for all pipeline agents."""
 
+from __future__ import annotations
+
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, AsyncIterator, Optional, Type
 
+import httpx
 from pydantic import BaseModel
 
 from llm.gateway import LLMGateway
 from schemas.common import SSEEvent, SSEEventType
+from utils.image_utils import build_image_content
+
+logger = logging.getLogger(__name__)
+
+# Recoverable errors: network/timeout issues that should not crash the pipeline
+_RECOVERABLE_ERRORS = (
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.PoolTimeout,
+    TimeoutError,
+    ConnectionError,
+)
 
 
 class BaseAgent(ABC):
@@ -100,13 +117,27 @@ class BaseAgent(ABC):
             # Store result for pipeline access
             self._last_result = result
 
-        except Exception as e:
+        except _RECOVERABLE_ERRORS as e:
+            logger.warning(f"Agent '{self.name}' encountered recoverable error: {e}")
             if stream_events:
                 yield SSEEvent(
                     event=SSEEventType.ERROR,
                     data={
                         "agent": self.name,
                         "error": str(e),
+                        "recoverable": True,
+                    },
+                )
+            # Do not raise -- let the pipeline continue with empty result
+        except Exception as e:
+            logger.error(f"Agent '{self.name}' encountered fatal error: {e}")
+            if stream_events:
+                yield SSEEvent(
+                    event=SSEEventType.ERROR,
+                    data={
+                        "agent": self.name,
+                        "error": str(e),
+                        "recoverable": False,
                     },
                 )
             raise
@@ -133,12 +164,8 @@ class BaseAgent(ABC):
 
         # Add images first
         for img in images:
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img.get('base64', img.get('data', ''))}"
-                },
-            })
+            image_data = img.get('base64', img.get('data', ''))
+            content.append(build_image_content(image_data))
 
         # Add text prompt
         content.append({

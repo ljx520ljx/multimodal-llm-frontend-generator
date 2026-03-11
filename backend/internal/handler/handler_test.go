@@ -58,7 +58,7 @@ func createTestPNG() []byte {
 }
 
 func TestUploadHandler_SingleImage(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	imageService := service.NewImageService(service.ImageServiceConfig{
@@ -106,7 +106,7 @@ func TestUploadHandler_SingleImage(t *testing.T) {
 }
 
 func TestUploadHandler_MultipleImages(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	imageService := service.NewImageService(service.ImageServiceConfig{
@@ -158,7 +158,7 @@ func TestUploadHandler_MultipleImages(t *testing.T) {
 }
 
 func TestUploadHandler_NoImages(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	imageService := service.NewImageService(service.ImageServiceConfig{
@@ -186,7 +186,7 @@ func TestUploadHandler_NoImages(t *testing.T) {
 }
 
 func TestGenerateHandler_Success(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
@@ -200,7 +200,7 @@ func TestGenerateHandler_Success(t *testing.T) {
 	}
 
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewGenerateHandler(generateService)
+	handler := NewGenerateHandler(generateService, 240*time.Second)
 
 	// Create session and add image
 	ctx := context.Background()
@@ -231,24 +231,21 @@ func TestGenerateHandler_Success(t *testing.T) {
 		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	// Check SSE response
+	// Check SSE response - streamSSE uses event.Type as the SSE event name
 	respBody := rec.Body.String()
-	if !strings.Contains(respBody, "event: message") {
-		t.Error("expected SSE events")
-	}
-	if !strings.Contains(respBody, "thinking") {
-		t.Error("expected thinking event")
+	if !strings.Contains(respBody, "event: thinking") && !strings.Contains(respBody, "event: code") {
+		t.Errorf("expected SSE events with typed event names, got: %s", respBody)
 	}
 }
 
 func TestGenerateHandler_SessionNotFound(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
 	mockGw := &mockGateway{}
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewGenerateHandler(generateService)
+	handler := NewGenerateHandler(generateService, 240*time.Second)
 
 	reqBody := GenerateRequest{
 		SessionID: "non-existent",
@@ -272,13 +269,13 @@ func TestGenerateHandler_SessionNotFound(t *testing.T) {
 }
 
 func TestGenerateHandler_InvalidFramework(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
 	mockGw := &mockGateway{}
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewGenerateHandler(generateService)
+	handler := NewGenerateHandler(generateService, 240*time.Second)
 
 	reqBody := `{"session_id": "test", "image_ids": ["img-1"], "framework": "angular"}`
 
@@ -297,7 +294,7 @@ func TestGenerateHandler_InvalidFramework(t *testing.T) {
 }
 
 func TestChatHandler_Success(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
@@ -310,7 +307,7 @@ func TestChatHandler_Success(t *testing.T) {
 	}
 
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewChatHandler(generateService)
+	handler := NewChatHandler(generateService, 240*time.Second)
 
 	// Create session with code
 	ctx := context.Background()
@@ -340,13 +337,13 @@ func TestChatHandler_Success(t *testing.T) {
 }
 
 func TestChatHandler_NoCodeGenerated(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
 	mockGw := &mockGateway{}
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewChatHandler(generateService)
+	handler := NewChatHandler(generateService, 240*time.Second)
 
 	// Create session without code
 	ctx := context.Background()
@@ -488,13 +485,13 @@ func TestHandleError_UnknownError(t *testing.T) {
 }
 
 func TestChatHandler_EmptyMessage(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
 	mockGw := &mockGateway{}
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewChatHandler(generateService)
+	handler := NewChatHandler(generateService, 240*time.Second)
 
 	ctx := context.Background()
 	session, _ := store.Create(ctx)
@@ -522,13 +519,13 @@ func TestChatHandler_EmptyMessage(t *testing.T) {
 }
 
 func TestChatHandler_InvalidJSON(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := service.NewPromptService()
 	mockGw := &mockGateway{}
 	generateService := service.NewGenerateService(store, promptService, mockGw)
-	handler := NewChatHandler(generateService)
+	handler := NewChatHandler(generateService, 240*time.Second)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -545,7 +542,7 @@ func TestChatHandler_InvalidJSON(t *testing.T) {
 }
 
 func TestUploadHandler_InvalidMultipartForm(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	imageService := service.NewImageService(service.ImageServiceConfig{
@@ -570,7 +567,7 @@ func TestUploadHandler_InvalidMultipartForm(t *testing.T) {
 }
 
 func TestUploadHandler_WithExistingSession(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	imageService := service.NewImageService(service.ImageServiceConfig{
@@ -619,7 +616,7 @@ func TestUploadHandler_WithExistingSession(t *testing.T) {
 }
 
 func TestUploadHandler_AlternativeFieldName(t *testing.T) {
-	store := service.NewMemoryStore(30 * time.Minute)
+	store := service.NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	imageService := service.NewImageService(service.ImageServiceConfig{

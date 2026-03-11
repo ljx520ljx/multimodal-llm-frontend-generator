@@ -1,0 +1,16 @@
+name: code_validator
+version: "1.0"
+description: "验证生成的 HTML 代码结构、状态机和交互完整性"
+tags:
+  - pipeline
+  - validation
+llm:
+  temperature: 0.0
+input:
+  - generated_code
+  - interaction_info
+output:
+  - validation_result
+retry: 0
+dependencies:
+  - code_generator

@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"context"
+	"time"
+
 	"multimodal-llm-frontend-generator/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -9,12 +12,14 @@ import (
 // ChatHandler handles chat-based code modification requests
 type ChatHandler struct {
 	generateService service.GenerateService
+	handlerTimeout  time.Duration
 }
 
 // NewChatHandler creates a new ChatHandler
-func NewChatHandler(generateService service.GenerateService) *ChatHandler {
+func NewChatHandler(generateService service.GenerateService, handlerTimeout time.Duration) *ChatHandler {
 	return &ChatHandler{
 		generateService: generateService,
+		handlerTimeout:  handlerTimeout,
 	}
 }
 
@@ -31,7 +36,9 @@ func (h *ChatHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	// Apply handler-level timeout (sits between Agent timeout and Frontend SSE timeout)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), h.handlerTimeout)
+	defer cancel()
 
 	// Start chat
 	eventChan, err := h.generateService.Chat(ctx, req.SessionID, req.Message)

@@ -99,6 +99,9 @@ const ANNOTATION_SCRIPT = `
 
   // 监听来自父页面的消息
   window.addEventListener('message', function(e) {
+    // srcdoc iframe 的 origin 为 'null'，无法做可靠的 origin 校验
+    // 安全由 iframe sandbox 属性 + 消息类型白名单保证
+    if (!e.data || typeof e.data !== 'object') return;
     if (e.data.type === 'setAnnotationMode') {
       annotationMode = e.data.enabled;
       if (!annotationMode && hoveredElement) {
@@ -126,7 +129,7 @@ const ANNOTATION_SCRIPT = `
         e.preventDefault();
         // 如果不是标注模式，可以提示用户
         if (!annotationMode) {
-          console.log('链接已禁用（原型预览模式）:', href);
+          // 原型预览模式下链接已禁用
         }
       }
     }
@@ -239,6 +242,8 @@ ${finalHtml}
   // 监听 iframe 发来的元素选中消息
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
+      // 验证消息来源是我们的 iframe
+      if (e.source !== iframeRef.current?.contentWindow) return;
       if (e.data.type === 'elementSelected' && onElementSelect) {
         onElementSelect(e.data.info);
       }

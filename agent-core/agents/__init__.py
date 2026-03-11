@@ -6,6 +6,7 @@ from agents.component_detector import ComponentDetectorAgent
 from agents.interaction_infer import InteractionInferAgent
 from agents.code_generator import CodeGeneratorAgent
 from agents.chat_agent import ChatAgent
+from agents.text_to_ui import TextToUIAgent
 
 __all__ = [
     "BaseAgent",
@@ -14,4 +15,5 @@ __all__ = [
     "InteractionInferAgent",
     "CodeGeneratorAgent",
     "ChatAgent",
+    "TextToUIAgent",
 ]

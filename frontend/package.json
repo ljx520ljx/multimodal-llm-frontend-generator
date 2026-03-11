@@ -16,6 +16,7 @@
     "@codesandbox/sandpack-react": "^2.20.0",
     "@hello-pangea/dnd": "^18.0.1",
     "@monaco-editor/react": "^4.7.0",
+    "@subframe/core": "^1.154.0",
     "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
     "next": "14.2.35",
@@ -23,6 +24,7 @@
     "react-dom": "^18",
     "react-dropzone": "^14.3.8",
     "tailwind-merge": "^3.4.0",
+    "zod": "^4.3.6",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

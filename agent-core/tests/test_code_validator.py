@@ -2,7 +2,8 @@
 
 import pytest
 
-from tools.code_validator import CodeValidator, ValidationResult
+from schemas.code import ValidationError, ValidationResult
+from tools.code_validator import CodeValidator
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is True
+        assert result.valid is True
         assert len(result.errors) == 0
 
     def test_missing_html_tag(self, validator: CodeValidator):
@@ -55,7 +56,7 @@ class TestCodeValidator:
         result = validator.validate(html)
 
         # Empty HTML should fail validation
-        assert result.is_valid is False
+        assert result.valid is False
 
     def test_missing_head_tag(self, validator: CodeValidator):
         """Test detection of missing head tag."""
@@ -63,8 +64,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("head" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("head" in e.message.lower() for e in result.errors)
 
     def test_missing_body_tag(self, validator: CodeValidator):
         """Test detection of missing body tag."""
@@ -72,8 +73,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("body" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("body" in e.message.lower() for e in result.errors)
 
     def test_missing_charset(self, validator: CodeValidator):
         """Test detection of missing charset meta tag."""
@@ -87,8 +88,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("charset" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("charset" in e.message.lower() for e in result.errors)
 
     def test_missing_viewport(self, validator: CodeValidator):
         """Test detection of missing viewport meta tag."""
@@ -102,8 +103,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("viewport" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("viewport" in e.message.lower() for e in result.errors)
 
     def test_missing_tailwind(self, validator: CodeValidator):
         """Test detection of missing Tailwind CSS."""
@@ -119,8 +120,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("tailwind" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("tailwind" in e.message.lower() for e in result.errors)
 
     def test_missing_alpine(self, validator: CodeValidator):
         """Test detection of missing Alpine.js."""
@@ -136,8 +137,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("alpine" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("alpine" in e.message.lower() for e in result.errors)
 
     def test_missing_x_data(self, validator: CodeValidator):
         """Test detection of missing x-data attribute."""
@@ -156,8 +157,8 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is False
-        assert any("x-data" in e.lower() for e in result.errors)
+        assert result.valid is False
+        assert any("x-data" in e.message.lower() for e in result.errors)
 
     def test_warning_for_missing_x_show(self, validator: CodeValidator):
         """Test warning for missing x-show elements."""
@@ -179,7 +180,7 @@ class TestCodeValidator:
         result = validator.validate(html)
 
         # Should be valid but with warnings
-        assert result.is_valid is True
+        assert result.valid is True
         assert any("x-show" in w.lower() for w in result.warnings)
 
     def test_warning_for_missing_click_handlers(self, validator: CodeValidator):
@@ -201,8 +202,38 @@ class TestCodeValidator:
 
         result = validator.validate(html)
 
-        assert result.is_valid is True
+        assert result.valid is True
         assert any("点击" in w or "click" in w.lower() for w in result.warnings)
+
+    def test_validation_error_has_suggestion(self, validator: CodeValidator):
+        """Test that validation errors include suggestions."""
+        html = ""
+
+        result = validator.validate(html)
+
+        assert result.valid is False
+        for error in result.errors:
+            assert isinstance(error, ValidationError)
+            assert error.type in ("syntax", "missing_state", "missing_transition", "alpine_error")
+            assert error.message  # non-empty message
+
+    def test_validation_error_types(self, validator: CodeValidator):
+        """Test that different checks produce correct error types."""
+        # Missing x-data -> missing_state type
+        html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body><div>No state</div></body>
+</html>"""
+
+        result = validator.validate(html)
+        state_errors = [e for e in result.errors if e.type == "missing_state"]
+        assert len(state_errors) > 0
 
 
 class TestStatesCoverage:
@@ -220,7 +251,7 @@ class TestStatesCoverage:
             html, ["home", "search", "detail"]
         )
 
-        assert result.is_valid is True
+        assert result.valid is True
         assert len(result.errors) == 0
 
     def test_missing_states(self, validator: CodeValidator):
@@ -234,9 +265,9 @@ class TestStatesCoverage:
             html, ["home", "search", "detail", "cart"]
         )
 
-        assert result.is_valid is False
-        assert any("detail" in e for e in result.errors)
-        assert any("cart" in e for e in result.errors)
+        assert result.valid is False
+        assert any("detail" in e.message for e in result.errors)
+        assert any("cart" in e.message for e in result.errors)
 
     def test_extra_states_warning(self, validator: CodeValidator):
         """Test warning for extra states not in expected list."""
@@ -248,7 +279,7 @@ class TestStatesCoverage:
 
         result = validator.validate_states_coverage(html, ["home", "search"])
 
-        assert result.is_valid is True
+        assert result.valid is True
         assert any("extra" in w for w in result.warnings)
 
 
@@ -257,20 +288,25 @@ class TestValidationResult:
 
     def test_default_values(self):
         """Test default values of ValidationResult."""
-        result = ValidationResult(is_valid=True)
+        result = ValidationResult(valid=True)
 
-        assert result.is_valid is True
+        assert result.valid is True
         assert result.errors == []
         assert result.warnings == []
 
     def test_with_errors_and_warnings(self):
         """Test ValidationResult with errors and warnings."""
         result = ValidationResult(
-            is_valid=False,
-            errors=["Error 1", "Error 2"],
+            valid=False,
+            errors=[
+                ValidationError(type="syntax", message="Error 1"),
+                ValidationError(type="missing_state", message="Error 2"),
+            ],
             warnings=["Warning 1"],
         )
 
-        assert result.is_valid is False
+        assert result.valid is False
         assert len(result.errors) == 2
         assert len(result.warnings) == 1
+        assert result.errors[0].type == "syntax"
+        assert result.errors[1].type == "missing_state"

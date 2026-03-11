@@ -10,18 +10,24 @@ import (
 
 // MemoryStore implements SessionStore using in-memory storage
 type MemoryStore struct {
-	sessions map[string]*Session
-	mu       sync.RWMutex
-	ttl      time.Duration
-	done     chan struct{}
+	sessions     map[string]*Session
+	mu           sync.RWMutex
+	ttl          time.Duration
+	historyLimit int
+	done         chan struct{}
+	closeOnce    sync.Once
 }
 
 // NewMemoryStore creates a new in-memory session store
-func NewMemoryStore(ttl time.Duration) *MemoryStore {
+func NewMemoryStore(ttl time.Duration, historyLimit int) *MemoryStore {
+	if historyLimit <= 0 {
+		historyLimit = 20
+	}
 	store := &MemoryStore{
-		sessions: make(map[string]*Session),
-		ttl:      ttl,
-		done:     make(chan struct{}),
+		sessions:     make(map[string]*Session),
+		ttl:          ttl,
+		historyLimit: historyLimit,
+		done:         make(chan struct{}),
 	}
 
 	// Start background cleanup goroutine
@@ -76,7 +82,7 @@ func (s *MemoryStore) Create(ctx context.Context) (*Session, error) {
 	return session, nil
 }
 
-// Get retrieves a session by ID
+// Get retrieves a session by ID (returns a deep copy for concurrency safety)
 func (s *MemoryStore) Get(ctx context.Context, id string) (*Session, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -86,7 +92,27 @@ func (s *MemoryStore) Get(ctx context.Context, id string) (*Session, error) {
 		return nil, &ErrSessionNotFound{ID: id}
 	}
 
-	return session, nil
+	return s.copySession(session), nil
+}
+
+// copySession returns a deep copy of a Session
+func (s *MemoryStore) copySession(src *Session) *Session {
+	dst := &Session{
+		ID:        src.ID,
+		Code:      src.Code,
+		Framework: src.Framework,
+		CreatedAt: src.CreatedAt,
+		UpdatedAt: src.UpdatedAt,
+	}
+	if src.Images != nil {
+		dst.Images = make([]ImageData, len(src.Images))
+		copy(dst.Images, src.Images)
+	}
+	if src.History != nil {
+		dst.History = make([]HistoryEntry, len(src.History))
+		copy(dst.History, src.History)
+	}
+	return dst
 }
 
 // Update updates an existing session
@@ -190,6 +216,12 @@ func (s *MemoryStore) AddHistory(ctx context.Context, sessionID string, entry Hi
 	}
 
 	session.History = append(session.History, entry)
+
+	// Trim history to limit
+	if len(session.History) > s.historyLimit {
+		session.History = session.History[len(session.History)-s.historyLimit:]
+	}
+
 	session.UpdatedAt = time.Now()
 
 	return nil
@@ -216,5 +248,7 @@ func (s *MemoryStore) GetHistory(ctx context.Context, sessionID string, limit in
 
 // Close stops the background cleanup goroutine
 func (s *MemoryStore) Close() {
-	close(s.done)
+	s.closeOnce.Do(func() {
+		close(s.done)
+	})
 }

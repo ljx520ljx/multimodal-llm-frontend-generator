@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"multimodal-llm-frontend-generator/internal/service"
@@ -52,8 +53,9 @@ func (h *EchoHandler) Handle(c *gin.Context) {
 		Delay:   req.Delay,
 	})
 	if err != nil {
+		log.Printf("[Echo] Agent service error: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "Agent service unavailable: " + err.Error(),
+			"error": "Agent service unavailable",
 		})
 		return
 	}
@@ -67,9 +69,10 @@ func (h *EchoHandler) HealthCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if err := h.agentClient.Health(ctx); err != nil {
+		log.Printf("[Echo] Agent health check failed: %v", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "unhealthy",
-			"error":  err.Error(),
+			"error":  "Agent service health check failed",
 		})
 		return
 	}

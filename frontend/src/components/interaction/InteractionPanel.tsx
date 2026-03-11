@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useProjectStore } from '@/stores/useProjectStore';
 import { ImageDropzone } from '@/components/upload/ImageDropzone';
 import { ImageList } from '@/components/upload/ImageList';
@@ -22,7 +22,10 @@ export function InteractionPanel() {
   const generatedCode = useProjectStore((state) => state.generatedCode);
   const sessionId = useProjectStore((state) => state.sessionId);
 
-  const { generate } = useGeneration();
+  const generationMode = useProjectStore((state) => state.generationMode);
+  const setGenerationMode = useProjectStore((state) => state.setGenerationMode);
+
+  const { generate, regenerate } = useGeneration();
   const { sendMessage } = useChat();
 
   const addAssistantMessage = useProjectStore((state) => state.addAssistantMessage);
@@ -30,6 +33,40 @@ export function InteractionPanel() {
 
   const isProcessing = status === 'uploading' || status === 'generating';
   const hasCode = !!generatedCode?.code;
+
+  // 全局剪贴板粘贴监听（允许不聚焦 textarea 时粘贴图片）
+  useEffect(() => {
+    const handleGlobalPaste = (e: globalThis.ClipboardEvent) => {
+      // 如果焦点在 textarea/input 上，交给组件自己处理
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const imageFiles: File[] = [];
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) imageFiles.push(file);
+        }
+      }
+
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        const newImages: ImageFile[] = imageFiles.map((file, i) => ({
+          id: generateId(),
+          file,
+          preview: URL.createObjectURL(file),
+          order: images.length + i,
+        }));
+        addImages(newImages);
+      }
+    };
+
+    document.addEventListener('paste', handleGlobalPaste);
+    return () => document.removeEventListener('paste', handleGlobalPaste);
+  }, [images.length, addImages]);
 
   // 开始新原型
   const handleNewProject = useCallback(() => {
@@ -54,12 +91,19 @@ export function InteractionPanel() {
 
       // 判断是生成还是对话修改
       if (!hasCode) {
-        // 首次生成：需要有图片
+        // 首次生成
         if (images.length > 0 || pastedImages.length > 0) {
+          // 有图片：正常生成
           await generate(text);
+        } else if (text && generationMode === 'quality') {
+          // 无图片但有文字描述且为精细模式：文字描述生成 UI
+          await generate(text);
+        } else if (text) {
+          // 无图片有文字但为快速模式：提示切换模式
+          addAssistantMessage('💡 纯文字描述生成需要使用"精细"模式。请切换到精细模式后再试，或上传 UI 设计稿图片。');
         } else {
-          // 没有图片时在对话区域提示用户
-          addAssistantMessage('⚠️ 请先上传 UI 设计稿图片，系统将根据设计稿自动推断交互逻辑并生成可交互原型。\n\n您可以：\n1. 点击上方"拖拽或点击上传设计稿"区域上传图片\n2. 直接粘贴图片到输入框中');
+          // 没有图片也没有文字
+          addAssistantMessage('⚠️ 请上传 UI 设计稿图片，或输入文字描述（精细模式）来生成可交互原型。\n\n您可以：\n1. 点击上方"拖拽或点击上传设计稿"区域上传图片\n2. 直接粘贴图片到输入框中\n3. 切换到"精细"模式，输入文字描述生成 UI');
         }
       } else {
         // 对话修改：需要有文字
@@ -68,7 +112,7 @@ export function InteractionPanel() {
         }
       }
     },
-    [images.length, hasCode, sessionId, addImages, generate, sendMessage, addAssistantMessage]
+    [images.length, hasCode, sessionId, generationMode, addImages, generate, sendMessage, addAssistantMessage]
   );
 
   // 确定按钮文字
@@ -112,6 +156,40 @@ export function InteractionPanel() {
         </p>
       </div>
 
+      {/* 生成模式切换（仅在未生成原型时显示） */}
+      {!hasCode && (
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
+          <span className="text-xs text-slate-500">模式</span>
+          <div className="flex rounded-md bg-slate-100 p-0.5">
+            <button
+              onClick={() => setGenerationMode('fast')}
+              disabled={isProcessing}
+              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                generationMode === 'fast'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              } disabled:opacity-50`}
+            >
+              快速
+            </button>
+            <button
+              onClick={() => setGenerationMode('quality')}
+              disabled={isProcessing}
+              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                generationMode === 'quality'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              } disabled:opacity-50`}
+            >
+              精细
+            </button>
+          </div>
+          <span className="text-[10px] text-slate-400">
+            {generationMode === 'fast' ? '单步生成，速度快' : '多步分析，质量高'}
+          </span>
+        </div>
+      )}
+
       {/* 上传区域（仅在未生成原型时显示） */}
       {!hasCode && (
         <div className="border-b border-slate-200 bg-white p-3">
@@ -134,6 +212,23 @@ export function InteractionPanel() {
 
       {/* 对话历史 */}
       <ChatHistory messages={chatMessages} isGenerating={status === 'generating'} />
+
+
+      {/* 错误恢复按钮 */}
+      {status === 'error' && (
+        <div className="flex items-center justify-center border-t border-slate-200 bg-red-50 px-4 py-3">
+          <button
+            onClick={regenerate}
+            className="flex items-center gap-1.5 rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M1 4v6h6M23 20v-6h-6" />
+              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" />
+            </svg>
+            重新生成
+          </button>
+        </div>
+      )}
 
       {/* 统一输入框 */}
       <UnifiedInput

@@ -22,13 +22,13 @@ def validate_html(code: str) -> dict:
     Returns:
         验证结果字典，包含:
         - valid: bool, 是否通过验证
-        - errors: list[str], 错误列表
+        - errors: list[dict], 结构化错误列表
         - warnings: list[str], 警告列表
     """
     validator = CodeValidator()
     result = validator.validate(code)
     return {
-        "valid": result.is_valid,
-        "errors": result.errors,
+        "valid": result.valid,
+        "errors": [e.model_dump() for e in result.errors],
         "warnings": result.warnings,
     }

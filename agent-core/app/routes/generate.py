@@ -1,6 +1,7 @@
 """Generate API route - Handles code generation requests."""
 
-import json
+from __future__ import annotations
+
 import logging
 from typing import Any, AsyncIterator, Optional
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.dependencies import get_llm_gateway
+from app.state import get_checkpoint_manager
 from graph import create_generate_workflow
 from llm.gateway import LLMGateway
 from schemas.common import SSEEvent, SSEEventType
@@ -18,27 +20,44 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_pipeline_llm_gateway() -> LLMGateway:
-    """Get LLM gateway for pipeline agents.
+def get_pipeline_llm_gateways() -> dict[str, LLMGateway]:
+    """Get LLM gateways for pipeline agents.
 
-    Currently uses default configuration. Individual agent model overrides
-    (LAYOUT_AGENT_MODEL, COMPONENT_AGENT_MODEL, etc.) are available in config
-    but require workflow refactoring to inject multiple LLM instances.
+    Returns a dict with "default" and per-agent gateways. Each agent gets
+    its own LLM gateway with potentially different model and temperature
+    configurations (set via LAYOUT_AGENT_MODEL, CODEGEN_AGENT_TEMPERATURE, etc.).
 
-    TODO: When needed, modify create_generate_workflow to accept a dict of
-    agent_type -> LLMGateway mappings for per-agent model configuration.
+    Returns:
+        Dict mapping agent type to LLMGateway instance.
+        Always includes "default" key.
     """
-    return get_llm_gateway("default")
+    gateways: dict[str, LLMGateway] = {
+        "default": get_llm_gateway("default"),
+    }
+    for agent_type in ("layout", "component", "interaction", "codegen"):
+        gateways[agent_type] = get_llm_gateway(agent_type)
+    return gateways
 
 
 class GenerateRequest(BaseModel):
     """Request body for generate endpoint."""
 
     session_id: str = Field(..., description="Unique session identifier")
-    images: list[dict[str, Any]] = Field(..., description="List of image data with base64 content")
+    images: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of image data with base64 content (optional if description provided)",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Text description for UI generation (alternative to images)",
+    )
     options: dict[str, Any] = Field(
         default_factory=dict,
         description="Generation options (max_retries, stream, etc.)",
+    )
+    resume: bool = Field(
+        default=False,
+        description="If true, attempt to resume from last checkpoint",
     )
 
 
@@ -54,7 +73,9 @@ async def event_generator(
     session_id: str,
     images: list[dict[str, Any]],
     options: dict[str, Any],
-    llm: LLMGateway,
+    llm_gateways: dict[str, LLMGateway],
+    resume: bool = False,
+    description: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Generate SSE events for the workflow.
 
@@ -62,19 +83,30 @@ async def event_generator(
         session_id: Session identifier
         images: List of image data
         options: Generation options
-        llm: LLM gateway instance (injected)
+        llm_gateways: Dict of agent_type -> LLMGateway instances
+        resume: Whether to resume from checkpoint
+        description: Optional text description for text-to-UI generation
 
     Yields:
         SSE formatted strings
     """
     try:
-        # Create workflow with injected LLM gateway
+        # Create workflow with per-agent LLM gateways and shared checkpoint manager
         max_retries = options.get("max_retries", get_settings().max_retries)
-        workflow = create_generate_workflow(llm, max_retries)
+        default_llm = llm_gateways["default"]
+        agent_llms = {k: v for k, v in llm_gateways.items() if k != "default"}
+        workflow = create_generate_workflow(
+            default_llm, max_retries, agent_llms,
+            checkpoint_mgr=get_checkpoint_manager(),
+        )
+
+        # If text description is provided, inject it into options
+        if description:
+            options["description"] = description
 
         # Run workflow and stream events
-        async for event in workflow.run(session_id, images, options):
-            yield format_sse(event)
+        async for event in workflow.run(session_id, images, options, resume=resume):
+            yield event.to_sse()
 
     except Exception as e:
         logger.exception(f"Generate error for session {session_id}")
@@ -82,27 +114,13 @@ async def event_generator(
             event=SSEEventType.ERROR,
             data={"error": str(e)},
         )
-        yield format_sse(error_event)
-
-
-def format_sse(event: SSEEvent) -> str:
-    """Format an SSE event as a string.
-
-    Args:
-        event: SSE event object
-
-    Returns:
-        SSE formatted string
-    """
-    event_type = event.event.value if hasattr(event.event, "value") else str(event.event)
-    data = json.dumps(event.data, ensure_ascii=False)
-    return f"event: {event_type}\ndata: {data}\n\n"
+        yield error_event.to_sse()
 
 
 @router.post("/generate")
 async def generate(
     request: GenerateRequest,
-    llm: LLMGateway = Depends(get_pipeline_llm_gateway),
+    llm_gateways: dict[str, LLMGateway] = Depends(get_pipeline_llm_gateways),
 ) -> StreamingResponse:
     """Generate code from design images.
 
@@ -122,17 +140,22 @@ async def generate(
     - error: Error occurred
     - done: Generation complete
     """
-    logger.info(f"Generate request: session={request.session_id}, images={len(request.images)}")
+    logger.info(
+        f"Generate request: session={request.session_id}, images={len(request.images)}, "
+        f"description={'yes' if request.description else 'no'}"
+    )
 
-    if not request.images:
-        raise HTTPException(status_code=400, detail="At least one image is required")
+    if not request.images and not request.description:
+        raise HTTPException(status_code=400, detail="At least one image or a description is required")
 
     return StreamingResponse(
         event_generator(
             session_id=request.session_id,
             images=request.images,
             options=request.options,
-            llm=llm,
+            llm_gateways=llm_gateways,
+            resume=request.resume,
+            description=request.description,
         ),
         media_type="text/event-stream",
         headers={
@@ -146,7 +169,7 @@ async def generate(
 @router.post("/generate/sync", response_model=GenerateResponse)
 async def generate_sync(
     request: GenerateRequest,
-    llm: LLMGateway = Depends(get_pipeline_llm_gateway),
+    llm_gateways: dict[str, LLMGateway] = Depends(get_pipeline_llm_gateways),
 ) -> GenerateResponse:
     """Generate code synchronously (non-streaming).
 
@@ -155,13 +178,20 @@ async def generate_sync(
     """
     logger.info(f"Generate sync request: session={request.session_id}")
 
-    if not request.images:
-        raise HTTPException(status_code=400, detail="At least one image is required")
+    if not request.images and not request.description:
+        raise HTTPException(status_code=400, detail="At least one image or a description is required")
 
     try:
-        # Create and run workflow with injected LLM gateway
+        # Create and run workflow with per-agent LLM gateways and shared checkpoint manager
         settings = get_settings()
-        workflow = create_generate_workflow(llm, request.options.get("max_retries", settings.max_retries))
+        default_llm = llm_gateways["default"]
+        agent_llms = {k: v for k, v in llm_gateways.items() if k != "default"}
+        workflow = create_generate_workflow(
+            default_llm,
+            request.options.get("max_retries", settings.max_retries),
+            agent_llms,
+            checkpoint_mgr=get_checkpoint_manager(),
+        )
 
         final_html = None
         success = False

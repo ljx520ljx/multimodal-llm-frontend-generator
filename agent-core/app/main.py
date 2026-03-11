@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+from __future__ import annotations
+
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -9,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routes import chat, echo, generate
+from app.state import get_checkpoint_manager, set_checkpoint_manager
+from checkpoint.manager import CheckpointManager
 
 # Configure logging
 settings = get_settings()
@@ -25,7 +29,22 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info(f"Starting Agent Core on port {settings.agent_port}")
     logger.info(f"Log level: {settings.log_level}")
+
+    # Create shared CheckpointManager with backend URL and optional auth token
+    mgr = CheckpointManager(
+        backend_url=settings.backend_url,
+        internal_token=settings.internal_api_token,
+    )
+    set_checkpoint_manager(mgr)
+    logger.info("CheckpointManager initialized")
+
     yield
+
+    # Cleanup: close the httpx client
+    checkpoint_mgr = get_checkpoint_manager()
+    if checkpoint_mgr is not None:
+        await checkpoint_mgr.close()
+        logger.info("CheckpointManager closed")
     logger.info("Shutting down Agent Core")
 
 

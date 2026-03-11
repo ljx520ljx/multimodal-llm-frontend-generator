@@ -1,5 +1,8 @@
 """Common schemas used across the pipeline."""
 
+from __future__ import annotations
+
+import json
 from enum import Enum
 from typing import Any
 
@@ -36,5 +39,4 @@ class SSEEvent(BaseModel):
 
     def to_sse(self) -> str:
         """Convert to SSE format string."""
-        import json
-        return f"event: {self.event.value}\ndata: {json.dumps(self.data)}\n\n"
+        return f"event: {self.event.value}\ndata: {json.dumps(self.data, ensure_ascii=False, default=str)}\n\n"

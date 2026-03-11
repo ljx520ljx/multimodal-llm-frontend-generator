@@ -19,6 +19,9 @@ COPY graph/ ./graph/
 COPY llm/ ./llm/
 COPY schemas/ ./schemas/
 COPY tools/ ./tools/
+COPY checkpoint/ ./checkpoint/
+COPY registry/ ./registry/
+COPY utils/ ./utils/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

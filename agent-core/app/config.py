@@ -1,5 +1,7 @@
 """Configuration management using Pydantic Settings."""
 
+from __future__ import annotations
+
 from functools import lru_cache
 from typing import Literal, Optional
 
@@ -30,6 +32,16 @@ class Settings(BaseSettings):
 
     # Pipeline settings
     max_retries: int = 3
+
+    # LLM request timeout (seconds) — innermost timeout in the chain:
+    # LLM request 60s < Go AGENT_TIMEOUT 180s < Go HANDLER_TIMEOUT 240s < Frontend SSE 300s
+    llm_request_timeout: int = 60
+
+    # Internal API token for Go backend checkpoint API (must match Go INTERNAL_API_TOKEN)
+    internal_api_token: str = ""
+
+    # Go backend URL for checkpoint API
+    backend_url: str = "http://localhost:8080"
 
     # OpenAI
     openai_api_key: str = ""
@@ -74,6 +86,18 @@ class Settings(BaseSettings):
     interaction_agent_model: Optional[str] = None # InteractionInfer
     codegen_agent_model: Optional[str] = None     # CodeGenerator
     validator_agent_model: Optional[str] = None   # CodeValidator (轻量任务可用便宜模型)
+
+    # ===========================================
+    # Agent-specific temperature overrides (optional)
+    # If not set, uses default 0.7
+    # ===========================================
+    default_temperature: float = 0.7
+    chat_agent_temperature: Optional[float] = None
+    layout_agent_temperature: Optional[float] = None
+    component_agent_temperature: Optional[float] = None
+    interaction_agent_temperature: Optional[float] = None
+    codegen_agent_temperature: Optional[float] = None     # 代码生成建议低温 (0.2-0.3)
+    validator_agent_temperature: Optional[float] = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -147,6 +171,23 @@ class Settings(BaseSettings):
             override_model = agent_model_overrides[agent_type]
             if override_model:
                 config["model"] = override_model
+
+        # Apply agent-specific temperature
+        agent_temperature_overrides = {
+            "chat": self.chat_agent_temperature,
+            "layout": self.layout_agent_temperature,
+            "component": self.component_agent_temperature,
+            "interaction": self.interaction_agent_temperature,
+            "codegen": self.codegen_agent_temperature,
+            "validator": self.validator_agent_temperature,
+        }
+
+        temperature = self.default_temperature
+        if agent_type != "default" and agent_type in agent_temperature_overrides:
+            override_temp = agent_temperature_overrides[agent_type]
+            if override_temp is not None:
+                temperature = override_temp
+        config["temperature"] = temperature
 
         return config
 

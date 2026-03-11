@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, KeyboardEvent, ClipboardEvent } from 'react';
+import { useState, useRef, useCallback, useEffect, KeyboardEvent, ClipboardEvent } from 'react';
 import Image from 'next/image';
 import { Button } from '@/components/ui';
 
@@ -32,6 +32,14 @@ export function UnifiedInput({
   const [text, setText] = useState('');
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 组件卸载时清理未释放的 ObjectURL
+  useEffect(() => {
+    return () => {
+      pastedImages.forEach((img) => URL.revokeObjectURL(img.preview));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;

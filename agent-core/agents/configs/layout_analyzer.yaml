@@ -1,0 +1,14 @@
+name: layout_analyzer
+version: "1.0"
+description: "分析设计稿的整体布局结构，识别区域划分和网格系统"
+tags:
+  - pipeline
+  - analysis
+llm:
+  temperature: 0.2
+input:
+  - images
+output:
+  - layout_info
+retry: 0
+dependencies: []

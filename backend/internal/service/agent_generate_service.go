@@ -7,8 +7,8 @@ import (
 
 // AgentGenerateService handles code generation using Python Agent
 type AgentGenerateService interface {
-	// Generate generates code from images via Python Agent (streaming)
-	Generate(ctx context.Context, sessionID string, imageIDs []string) (<-chan SSEEvent, error)
+	// Generate generates code from images or description via Python Agent (streaming)
+	Generate(ctx context.Context, sessionID string, imageIDs []string, description string) (<-chan SSEEvent, error)
 }
 
 // agentGenerateService implements AgentGenerateService
@@ -28,37 +28,43 @@ func NewAgentGenerateService(
 	}
 }
 
-// Generate generates code from images via Python Agent
-func (s *agentGenerateService) Generate(ctx context.Context, sessionID string, imageIDs []string) (<-chan SSEEvent, error) {
+// Generate generates code from images or description via Python Agent
+func (s *agentGenerateService) Generate(ctx context.Context, sessionID string, imageIDs []string, description string) (<-chan SSEEvent, error) {
 	// Get session
 	session, err := s.sessionStore.Get(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get images
-	images, err := s.sessionStore.GetImages(ctx, sessionID, imageIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Printf("[AgentGenerate] Session %s: sending %d images to Python Agent", sessionID, len(images))
-
-	// Convert images to agent format
-	agentImages := make([]map[string]interface{}, len(images))
-	for i, img := range images {
-		agentImages[i] = map[string]interface{}{
-			"id":     img.ID,
-			"base64": img.Base64,
-			"order":  img.Order,
+	// Get images (may be empty for text-to-UI)
+	var agentImages []map[string]any
+	if len(imageIDs) > 0 {
+		images, err := s.sessionStore.GetImages(ctx, sessionID, imageIDs)
+		if err != nil {
+			return nil, err
 		}
+
+		log.Printf("[AgentGenerate] Session %s: sending %d images to Python Agent", sessionID, len(images))
+
+		agentImages = make([]map[string]any, len(images))
+		for i, img := range images {
+			agentImages[i] = map[string]any{
+				"id":     img.ID,
+				"base64": img.Base64,
+				"order":  img.Order,
+			}
+		}
+	} else {
+		log.Printf("[AgentGenerate] Session %s: text-to-UI generation with description", sessionID)
+		agentImages = []map[string]any{}
 	}
 
 	// Create agent request
 	req := &AgentGenerateRequest{
-		SessionID: sessionID,
-		Images:    agentImages,
-		Options: map[string]interface{}{
+		SessionID:   sessionID,
+		Images:      agentImages,
+		Description: description,
+		Options: map[string]any{
 			"max_retries": 3,
 		},
 	}
@@ -70,7 +76,7 @@ func (s *agentGenerateService) Generate(ctx context.Context, sessionID string, i
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Process agent output
 	go func() {
@@ -102,9 +108,9 @@ func (s *agentGenerateService) processAgentOutput(
 
 		// Handle code event - save to session
 		if event.Type == SSETypeCode {
-			// Extract HTML from event content
-			// The content might be JSON with html field
-			s.sessionStore.UpdateCode(ctx, sessionID, event.Content)
+			if err := s.sessionStore.UpdateCode(ctx, sessionID, event.Content); err != nil {
+				log.Printf("[AgentGenerate] Failed to save code: %v", err)
+			}
 		}
 
 		// Handle done event

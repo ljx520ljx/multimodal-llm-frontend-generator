@@ -1,0 +1,16 @@
+name: chat_agent
+version: "1.0"
+description: "处理用户对话式修改请求，使用工具调用验证和修改代码"
+tags:
+  - chat
+llm:
+  temperature: 0.7
+input:
+  - message
+  - current_code
+  - images
+  - history
+output:
+  - modified_code
+retry: 0
+dependencies: []

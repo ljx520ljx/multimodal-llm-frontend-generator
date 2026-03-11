@@ -41,5 +41,8 @@ const (
 	ErrCodeNoCodeGenerated    = "NO_CODE_GENERATED"
 	ErrCodeGenerationFailed   = "GENERATION_FAILED"
 	ErrCodeRateLimited        = "RATE_LIMITED"
+	ErrCodeAgentUnavailable   = "AGENT_UNAVAILABLE"
+	ErrCodeAgentTimeout       = "AGENT_TIMEOUT"
+	ErrCodeAgentError         = "AGENT_ERROR"
 	ErrCodeInvalidRequest     = "INVALID_REQUEST"
 )

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -36,9 +37,10 @@ type EchoRequest struct {
 
 // AgentGenerateRequest represents a request to the generate endpoint
 type AgentGenerateRequest struct {
-	SessionID string                   `json:"session_id"`
-	Images    []map[string]interface{} `json:"images"`
-	Options   map[string]interface{}   `json:"options,omitempty"`
+	SessionID   string           `json:"session_id"`
+	Images      []map[string]any `json:"images"`
+	Description string           `json:"description,omitempty"`
+	Options     map[string]any   `json:"options,omitempty"`
 }
 
 // AgentChatRequest represents a request to the chat endpoint
@@ -46,7 +48,7 @@ type AgentChatRequest struct {
 	SessionID   string                   `json:"session_id"`
 	Message     string                   `json:"message"`
 	CurrentCode string                   `json:"current_code"`
-	Images      []map[string]interface{} `json:"images"`
+	Images      []map[string]any `json:"images"`
 	History     []ChatHistoryEntry       `json:"history,omitempty"`
 }
 
@@ -62,14 +64,36 @@ type agentClient struct {
 	httpClient *http.Client
 }
 
+// agentHTTPError maps HTTP status codes to typed errors
+func agentHTTPError(statusCode int) error {
+	switch statusCode {
+	case http.StatusTooManyRequests:
+		return &ErrAgentRateLimited{}
+	case http.StatusServiceUnavailable:
+		return &ErrAgentUnavailable{}
+	case http.StatusGatewayTimeout:
+		return &ErrAgentTimeout{}
+	default:
+		return &ErrAgentError{StatusCode: statusCode}
+	}
+}
+
 // NewAgentClient creates a new AgentClient
 func NewAgentClient(baseURL string, timeout time.Duration) AgentClient {
 	// For SSE streaming, we don't set a global timeout on the HTTP client
 	// because it would cut off long-running streams.
 	// Instead, we rely on context cancellation for request lifecycle management.
-	// The timeout parameter is used for connection establishment only.
 	transport := &http.Transport{
-		ResponseHeaderTimeout: timeout, // Timeout for receiving response headers
+		ResponseHeaderTimeout: timeout,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		MaxConnsPerHost:       20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
 	}
 
 	return &agentClient{
@@ -134,11 +158,11 @@ func (c *agentClient) Echo(ctx context.Context, req *EchoRequest) (<-chan SSEEve
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("agent service error: status %d", resp.StatusCode)
+		return nil, agentHTTPError(resp.StatusCode)
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Process SSE stream in background
 	go func() {
@@ -153,6 +177,7 @@ func (c *agentClient) Echo(ctx context.Context, req *EchoRequest) (<-chan SSEEve
 // processSSEStream parses SSE events from the response body
 func (c *agentClient) processSSEStream(ctx context.Context, body io.Reader, outChan chan<- SSEEvent) {
 	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024) // 1MB buffer for large LLM responses
 
 	var eventType string
 	var dataBuffer strings.Builder
@@ -186,11 +211,10 @@ func (c *agentClient) processSSEStream(ctx context.Context, body io.Reader, outC
 		}
 
 		// Parse SSE fields
-		if strings.HasPrefix(line, "event:") {
-			eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-		} else if strings.HasPrefix(line, "data:") {
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			dataBuffer.WriteString(data)
+		if after, ok := strings.CutPrefix(line, "event:"); ok {
+			eventType = strings.TrimSpace(after)
+		} else if after, ok := strings.CutPrefix(line, "data:"); ok {
+			dataBuffer.WriteString(strings.TrimSpace(after))
 		}
 	}
 
@@ -211,7 +235,7 @@ func (c *agentClient) parseSSEData(eventType, data string) SSEEvent {
 		return SSEEvent{Type: SSETypeError, Content: data}
 	case "thinking":
 		// Parse JSON to extract content field
-		var thinkingData map[string]interface{}
+		var thinkingData map[string]any
 		if err := json.Unmarshal([]byte(data), &thinkingData); err == nil {
 			if content, ok := thinkingData["content"].(string); ok {
 				return SSEEvent{Type: SSETypeThinking, Content: content}
@@ -220,7 +244,7 @@ func (c *agentClient) parseSSEData(eventType, data string) SSEEvent {
 		return SSEEvent{Type: SSETypeThinking, Content: data}
 	case "code":
 		// Parse JSON to extract html field
-		var codeData map[string]interface{}
+		var codeData map[string]any
 		if err := json.Unmarshal([]byte(data), &codeData); err == nil {
 			if html, ok := codeData["html"].(string); ok {
 				return SSEEvent{Type: SSETypeCode, Content: html}
@@ -229,35 +253,26 @@ func (c *agentClient) parseSSEData(eventType, data string) SSEEvent {
 		// Fallback: return data as-is
 		return SSEEvent{Type: SSETypeCode, Content: data}
 	case "agent_start":
-		// Parse JSON to extract description for user-friendly output
-		var startData map[string]interface{}
+		// Pass through agent_start with agent name and description
+		var startData map[string]any
 		if err := json.Unmarshal([]byte(data), &startData); err == nil {
-			if desc, ok := startData["description"].(string); ok {
-				return SSEEvent{Type: SSETypeThinking, Content: desc + "..."}
+			agent, _ := startData["agent"].(string)
+			desc, _ := startData["description"].(string)
+			if desc == "" {
+				desc = "正在分析..."
 			}
+			return SSEEvent{Type: SSETypeAgentStart, Content: desc, Agent: agent}
 		}
-		return SSEEvent{Type: SSETypeThinking, Content: "正在分析..."}
+		return SSEEvent{Type: SSETypeAgentStart, Content: "正在分析..."}
 	case "agent_result":
-		// Parse JSON to generate completion message
-		var resultData map[string]interface{}
+		// Pass through agent_result with agent name and result summary
+		var resultData map[string]any
 		if err := json.Unmarshal([]byte(data), &resultData); err == nil {
-			if agent, ok := resultData["agent"].(string); ok {
-				// Generate user-friendly completion message based on agent type
-				switch agent {
-				case "LayoutAnalyzer":
-					return SSEEvent{Type: SSETypeThinking, Content: "✓ 布局分析完成"}
-				case "ComponentDetector":
-					return SSEEvent{Type: SSETypeThinking, Content: "✓ 组件识别完成"}
-				case "InteractionInfer":
-					return SSEEvent{Type: SSETypeThinking, Content: "✓ 交互逻辑推断完成"}
-				case "CodeGenerator":
-					return SSEEvent{Type: SSETypeThinking, Content: "✓ 代码生成完成"}
-				default:
-					return SSEEvent{Type: SSETypeThinking, Content: "✓ 分析完成"}
-				}
-			}
+			agent, _ := resultData["agent"].(string)
+			content := extractAgentResultSummary(resultData)
+			return SSEEvent{Type: SSETypeAgentResult, Content: content, Agent: agent}
 		}
-		return SSEEvent{Type: SSETypeThinking, Content: "✓ 分析完成"}
+		return SSEEvent{Type: SSETypeAgentResult, Content: "分析完成"}
 	case "tool_call":
 		return SSEEvent{Type: SSETypeToolCall, Content: data}
 	case "tool_result":
@@ -295,11 +310,11 @@ func (c *agentClient) Generate(ctx context.Context, req *AgentGenerateRequest) (
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("agent service error: status %d", resp.StatusCode)
+		return nil, agentHTTPError(resp.StatusCode)
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Process SSE stream in background
 	go func() {
@@ -335,11 +350,11 @@ func (c *agentClient) Chat(ctx context.Context, req *AgentChatRequest) (<-chan S
 
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close()
-		return nil, fmt.Errorf("agent service error: status %d", resp.StatusCode)
+		return nil, agentHTTPError(resp.StatusCode)
 	}
 
 	// Create output channel
-	outChan := make(chan SSEEvent)
+	outChan := make(chan SSEEvent, 16)
 
 	// Process SSE stream in background
 	go func() {
@@ -349,4 +364,29 @@ func (c *agentClient) Chat(ctx context.Context, req *AgentChatRequest) (<-chan S
 	}()
 
 	return outChan, nil
+}
+
+// extractAgentResultSummary extracts a human-readable summary from agent result data.
+// It looks for "summary" or "description" fields in the result object first,
+// then falls back to JSON serialization of the full result.
+func extractAgentResultSummary(data map[string]any) string {
+	result, ok := data["result"].(map[string]any)
+	if !ok {
+		return "分析完成"
+	}
+
+	// Prefer summary field (ComponentList, InteractionSpec have this)
+	if summary, ok := result["summary"].(string); ok && summary != "" {
+		return summary
+	}
+	// Fall back to description field (LayoutSchema has this)
+	if desc, ok := result["description"].(string); ok && desc != "" {
+		return desc
+	}
+
+	// Last resort: compact JSON of the result
+	if resultJSON, err := json.Marshal(result); err == nil {
+		return string(resultJSON)
+	}
+	return "分析完成"
 }

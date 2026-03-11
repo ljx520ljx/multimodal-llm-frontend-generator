@@ -34,7 +34,7 @@ func (m *mockGateway) Provider() string {
 }
 
 func TestGenerateService_Generate(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := NewPromptService()
@@ -94,7 +94,7 @@ func TestGenerateService_Generate(t *testing.T) {
 }
 
 func TestGenerateService_Generate_SessionNotFound(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := NewPromptService()
@@ -110,7 +110,7 @@ func TestGenerateService_Generate_SessionNotFound(t *testing.T) {
 }
 
 func TestGenerateService_Chat(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := NewPromptService()
@@ -170,7 +170,7 @@ func TestGenerateService_Chat(t *testing.T) {
 }
 
 func TestGenerateService_Chat_NoCode(t *testing.T) {
-	store := NewMemoryStore(30 * time.Minute)
+	store := NewMemoryStore(30*time.Minute, 20)
 	defer store.Close()
 
 	promptService := NewPromptService()

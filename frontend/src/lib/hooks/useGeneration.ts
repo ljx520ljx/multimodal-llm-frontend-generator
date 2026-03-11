@@ -76,95 +76,177 @@ export function useGeneration() {
 
   const [uploadProgress, setUploadProgress] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const rafIdsRef = useRef<number[]>([]);
+
+  // 公共 SSE 流处理逻辑
+  const processSSEStream = useCallback(async (
+    response: Response,
+    doneMessage: string,
+    errorPrefix: string,
+  ) => {
+    let codeBuffer = '';
+    let thinkingBuffer = '';
+    let codeRafPending = false;
+    let thinkingRafPending = false;
+
+    // Agent step counter for quality mode (maps agent events to Step format)
+    let agentStepCounter = 0;
+    const AGENT_DISPLAY_NAMES: Record<string, string> = {
+      'LayoutAnalyzer': '布局分析',
+      'ComponentDetector': '组件识别',
+      'InteractionInfer': '交互推理',
+      'CodeGenerator': '代码生成',
+    };
+
+    await readSSEStream(response, {
+      onThinking: (content) => {
+        thinkingBuffer += content;
+        if (!thinkingRafPending) {
+          thinkingRafPending = true;
+          const id = requestAnimationFrame(() => {
+            // 写入 chatMessages 以便 ChatHistory 渲染 ThinkingSteps
+            appendToLastAssistantMessage(thinkingBuffer);
+            appendThinking(thinkingBuffer);
+            thinkingBuffer = '';
+            thinkingRafPending = false;
+          });
+          rafIdsRef.current.push(id);
+        }
+      },
+      onCode: (content) => {
+        codeBuffer += content;
+        if (!codeRafPending) {
+          codeRafPending = true;
+          const id = requestAnimationFrame(() => {
+            setGeneratedCode({
+              code: cleanCodeContent(codeBuffer),
+              timestamp: Date.now(),
+            });
+            codeRafPending = false;
+          });
+          rafIdsRef.current.push(id);
+        }
+      },
+      onAgentStart: (agent, content) => {
+        // Format as Step to reuse ThinkingSteps rendering
+        agentStepCounter++;
+        const displayName = AGENT_DISPLAY_NAMES[agent] || agent;
+        const msg = `Step ${agentStepCounter}: ${displayName}\n${content}\n`;
+        appendToLastAssistantMessage(msg);
+        appendThinking(msg);
+      },
+      onAgentResult: (_agent, content) => {
+        // Append result summary under the current step
+        if (content) {
+          const msg = `${content}\n\n`;
+          appendToLastAssistantMessage(msg);
+          appendThinking(msg);
+        }
+      },
+      onDone: () => {
+        if (thinkingBuffer) {
+          appendToLastAssistantMessage(thinkingBuffer);
+          appendThinking(thinkingBuffer);
+          thinkingBuffer = '';
+        }
+        if (codeBuffer) {
+          const finalCode = cleanCodeContent(codeBuffer);
+          setGeneratedCode({
+            code: finalCode,
+            timestamp: Date.now(),
+          });
+          appendToLastAssistantMessage(doneMessage);
+        } else {
+          appendToLastAssistantMessage('未能生成代码，请重试或调整设计稿');
+        }
+        setStatus('completed');
+      },
+      onError: (error) => {
+        if (thinkingBuffer) {
+          appendToLastAssistantMessage(thinkingBuffer);
+          appendThinking(thinkingBuffer);
+          thinkingBuffer = '';
+        }
+        appendToLastAssistantMessage(`${errorPrefix}: ${error}`);
+        setError(error);
+      },
+    });
+  }, [appendThinking, setGeneratedCode, setStatus, setError, appendToLastAssistantMessage]);
 
   const generate = useCallback(async (promptText?: string) => {
-    // 使用 getState 获取最新的图片（解决粘贴图片后状态未及时更新的问题）
     const currentImages = useProjectStore.getState().images;
+    const mode = useProjectStore.getState().generationMode;
 
-    if (currentImages.length === 0) {
+    // Text-only generation: no images but has description, requires quality mode
+    const isTextOnly = currentImages.length === 0 && !!promptText && mode === 'quality';
+
+    if (currentImages.length === 0 && !isTextOnly) {
       setError('请先上传设计稿');
       return;
     }
 
     try {
-      // 重置生成状态（保留对话历史）
       setUploadProgress(0);
-      setStatus('uploading');
       setThinking('');
 
-      // 添加用户消息到对话历史
-      const imagePreviews = currentImages.map((img) => img.preview);
-      addUserMessage(promptText || '生成交互原型', imagePreviews);
-
-      // 添加 AI 消息占位
-      addAssistantMessage('');
-
-      // 创建可中断的控制器
       abortControllerRef.current = new AbortController();
 
-      // 1. 上传图片
-      const files = currentImages.map((img) => img.file);
+      if (isTextOnly) {
+        // Text-to-UI: skip upload, create session via upload with empty files
+        // then call agent generate with description
+        addUserMessage(promptText || '根据描述生成 UI');
+        addAssistantMessage('');
 
-      // 模拟上传进度
-      const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => Math.min(prev + 10, 90));
-      }, 200);
+        setStatus('generating');
 
-      const uploadResult = await api.upload(files);
+        // For text-only, we need a session. Create one via a lightweight upload or use existing.
+        let currentSessionId = useProjectStore.getState().sessionId;
+        if (!currentSessionId) {
+          // Create a session by uploading an empty set (backend should handle this)
+          // Actually, we need to create a session first. Use a small dummy approach:
+          // The agent generate endpoint will work with session_id from a previous upload
+          // or we'll need to handle creating sessions server-side.
+          // For now, generate a client-side session and let the agent service handle it.
+          const sessionId = `text_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          setSessionId(sessionId);
+          currentSessionId = sessionId;
+        }
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+        const response = await api.generate(currentSessionId, [], 'react', mode, promptText, abortControllerRef.current.signal);
 
-      // 保存 sessionId 和 imageIds
-      setSessionId(uploadResult.session_id);
-      const imageIds = uploadResult.images.map((img) => img.id);
-      setImageIds(imageIds);
+        await processSSEStream(
+          response,
+          '原型生成完成，请在右侧预览区体验交互效果',
+          '生成失败',
+        );
+      } else {
+        // Image-based generation: upload then generate
+        setStatus('uploading');
 
-      // 2. 请求生成代码
-      setStatus('generating');
-      // 更新对话框状态提示
-      appendToLastAssistantMessage('🔄 正在生成代码...\n\n');
+        const imagePreviews = currentImages.map((img) => img.preview);
+        addUserMessage(promptText || '生成交互原型', imagePreviews);
+        addAssistantMessage('');
 
-      const response = await api.generate(uploadResult.session_id, imageIds, 'react');
+        const files = currentImages.map((img) => img.file);
 
-      // 3. 读取 SSE 流
-      let codeBuffer = '';
+        const uploadResult = await api.upload(files, (percent) => {
+          setUploadProgress(percent);
+        });
 
-      await readSSEStream(response, {
-        onThinking: (content) => {
-          appendThinking(content);
-          // 更新对话历史中的 AI 消息
-          appendToLastAssistantMessage(content);
-        },
-        onCode: (content) => {
-          codeBuffer += content;
-          // 流式更新代码，让用户实时看到生成结果（清理 markdown 标记）
-          setGeneratedCode({
-            code: cleanCodeContent(codeBuffer),
-            timestamp: Date.now(),
-          });
-        },
-        onDone: () => {
-          if (codeBuffer) {
-            // 最终清理确保没有残留的 markdown 标记
-            const finalCode = cleanCodeContent(codeBuffer);
-            setGeneratedCode({
-              code: finalCode,
-              timestamp: Date.now(),
-            });
-            // 添加完成提示（总是显示，让用户知道生成完成）
-            appendToLastAssistantMessage('\n\n✅ 原型生成完成！请在右侧预览区体验交互效果');
-          } else {
-            // 没有代码生成
-            appendToLastAssistantMessage('\n\n⚠️ 未能生成代码，请重试或调整设计稿');
-          }
-          setStatus('completed');
-        },
-        onError: (error) => {
-          appendToLastAssistantMessage(`生成失败: ${error}`);
-          setError(error);
-        },
-      });
+        setSessionId(uploadResult.session_id);
+        const imageIds = uploadResult.images.map((img) => img.id);
+        setImageIds(imageIds);
+
+        setStatus('generating');
+
+        const response = await api.generate(uploadResult.session_id, imageIds, 'react', mode, undefined, abortControllerRef.current!.signal);
+
+        await processSSEStream(
+          response,
+          '原型生成完成，请在右侧预览区体验交互效果',
+          '生成失败',
+        );
+      }
     } catch (error) {
       if ((error as Error).name === 'AbortError') {
         setStatus('idle');
@@ -172,20 +254,56 @@ export function useGeneration() {
       }
       const message =
         error instanceof Error ? error.message : '生成失败，请重试';
-      appendToLastAssistantMessage(`错误: ${message}`);
       setError(message);
     }
   }, [
     setStatus,
     setThinking,
-    appendThinking,
     setGeneratedCode,
     setImageIds,
     setSessionId,
     setError,
     addUserMessage,
     addAssistantMessage,
-    appendToLastAssistantMessage,
+    processSSEStream,
+  ]);
+
+  const regenerate = useCallback(async () => {
+    const { sessionId, imageIds, generationMode } = useProjectStore.getState();
+    if (!sessionId || imageIds.length === 0) {
+      setError('无法重新生成：缺少会话信息，请重新上传设计稿');
+      return;
+    }
+
+    try {
+      setStatus('generating');
+      setThinking('');
+      addAssistantMessage('');
+
+      abortControllerRef.current = new AbortController();
+
+      const response = await api.generate(sessionId, imageIds, 'react', generationMode, undefined, abortControllerRef.current!.signal);
+
+      await processSSEStream(
+        response,
+        '原型重新生成完成，请在右侧预览区体验交互效果',
+        '重新生成失败',
+      );
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') {
+        setStatus('idle');
+        return;
+      }
+      const message =
+        error instanceof Error ? error.message : '重新生成失败，请重试';
+      setError(message);
+    }
+  }, [
+    setStatus,
+    setThinking,
+    setError,
+    addAssistantMessage,
+    processSSEStream,
   ]);
 
   const cancel = useCallback(() => {
@@ -193,9 +311,12 @@ export function useGeneration() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    // 清理所有待执行的 requestAnimationFrame
+    rafIdsRef.current.forEach((id) => cancelAnimationFrame(id));
+    rafIdsRef.current = [];
     setStatus('idle');
     setUploadProgress(0);
   }, [setStatus]);
 
-  return { generate, cancel, uploadProgress };
+  return { generate, regenerate, cancel, uploadProgress };
 }
