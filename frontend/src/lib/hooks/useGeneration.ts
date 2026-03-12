@@ -147,6 +147,10 @@ export function useGeneration() {
         }
       },
       onDone: () => {
+        // 取消所有待执行的 rAF，避免竞态导致空字符串追加
+        rafIdsRef.current.forEach((id) => cancelAnimationFrame(id));
+        rafIdsRef.current = [];
+
         if (thinkingBuffer) {
           appendToLastAssistantMessage(thinkingBuffer);
           appendThinking(thinkingBuffer);
@@ -165,6 +169,10 @@ export function useGeneration() {
         setStatus('completed');
       },
       onError: (error) => {
+        // 取消所有待执行的 rAF
+        rafIdsRef.current.forEach((id) => cancelAnimationFrame(id));
+        rafIdsRef.current = [];
+
         if (thinkingBuffer) {
           appendToLastAssistantMessage(thinkingBuffer);
           appendThinking(thinkingBuffer);
@@ -185,6 +193,20 @@ export function useGeneration() {
         setStatus('error');
       },
     });
+
+    // 兜底：如果 SSE 流结束后 status 仍为 generating（onDone/onError 均未触发），
+    // 强制切换状态，避免 UI 永远卡在"正在生成"
+    const currentStatus = useProjectStore.getState().status;
+    if (currentStatus === 'generating') {
+      if (codeBuffer) {
+        const finalCode = cleanCodeContent(codeBuffer);
+        setGeneratedCode({ code: finalCode, timestamp: Date.now() });
+        appendToLastAssistantMessage('\n\n' + doneMessage);
+      } else {
+        appendToLastAssistantMessage('\n\n未能生成代码，请重试或调整设计稿');
+      }
+      setStatus('completed');
+    }
   }, [appendThinking, setGeneratedCode, setStatus, setError, appendToLastAssistantMessage]);
 
   const generate = useCallback(async (promptText?: string) => {

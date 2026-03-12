@@ -73,6 +73,10 @@ function parseContent(content: string): ParsedContent {
   // 3. 移除残留的 HTML 标签（所有标签，保留 <thinking>）
   textContent = textContent.replace(/<\/?(?!thinking)[a-zA-Z][^>]*>/gi, '');
 
+  // 3.5 清理孤立的 HTML 标签片段（如 "main>", "div>", "section>" 等）
+  // 这些是未被上面正则匹配到的不完整标签残留
+  textContent = textContent.replace(/\b[a-zA-Z]{1,10}>\s*$/gm, '');
+
   // 4. 移除 AI 常见的过渡语句（包括不完整的）
   textContent = textContent
     .replace(/下面是.*?代码[：:.]*\s*/gi, '')

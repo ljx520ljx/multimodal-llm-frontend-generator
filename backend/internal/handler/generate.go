@@ -55,7 +55,10 @@ func (h *GenerateHandler) Handle(c *gin.Context) {
 	streamSSE(c, eventChan)
 }
 
-// streamSSE streams SSE events to the client
+// streamSSE streams SSE events to the client.
+// Uses the same payload format as streamAgentSSE for consistency:
+//
+//	{"type": "<event_type>", "content": "<content>", "agent": "<agent>"}
 func streamSSE(c *gin.Context, eventChan <-chan service.SSEEvent) {
 	// Set SSE headers
 	c.Header("Content-Type", "text/event-stream")
@@ -79,17 +82,25 @@ func streamSSE(c *gin.Context, eventChan <-chan service.SSEEvent) {
 				return
 			}
 
-			// Marshal event to JSON
-			data, err := json.Marshal(event)
-			if err != nil {
-				continue
-			}
-
-			// Write SSE event using the event's actual type
+			// Determine event type for SSE
 			eventType := event.Type
 			if eventType == "" {
 				eventType = "message"
 			}
+
+			// Build payload with explicit fields (same format as streamAgentSSE)
+			payload := map[string]any{
+				"type":    event.Type,
+				"content": event.Content,
+			}
+			if event.Agent != "" {
+				payload["agent"] = event.Agent
+			}
+			data, err := json.Marshal(payload)
+			if err != nil {
+				continue
+			}
+
 			_, err = io.WriteString(c.Writer, "event: "+eventType+"\n")
 			if err != nil {
 				return

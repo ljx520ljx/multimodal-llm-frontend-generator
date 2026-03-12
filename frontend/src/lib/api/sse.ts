@@ -34,6 +34,7 @@ export async function readSSEStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let doneFired = false;
 
   try {
     while (true) {
@@ -50,6 +51,7 @@ export async function readSSEStream(
       } catch (err) {
         clearTimeout(timeoutId!);
         callbacks.onError?.(err instanceof Error ? err.message : 'SSE 连接超时');
+        doneFired = true;
         return;
       }
       clearTimeout(timeoutId!);
@@ -69,6 +71,7 @@ export async function readSSEStream(
           const data = line.slice(6);
 
           if (data === '[DONE]') {
+            doneFired = true;
             callbacks.onDone?.();
             return;
           }
@@ -78,8 +81,11 @@ export async function readSSEStream(
             const result = SSEEventSchema.safeParse(raw);
 
             if (!result.success) {
-              // schema 验证失败，作为纯文本代码处理
-              callbacks.onCode?.(data);
+              // schema 验证失败：只有当数据看起来像 HTML 时才当 code 处理，
+              // 否则忽略，避免 JSON 垃圾污染 codeBuffer
+              if (typeof raw === 'string' || (typeof data === 'string' && data.trimStart().startsWith('<'))) {
+                callbacks.onCode?.(data);
+              }
               continue;
             }
 
@@ -99,15 +105,23 @@ export async function readSSEStream(
                 callbacks.onAgentResult?.(event.agent || '', event.content);
                 break;
               case 'done':
+                doneFired = true;
                 callbacks.onDone?.();
                 return;
               case 'error':
+                doneFired = true;
                 callbacks.onError?.(event.content);
                 return;
+              // tool_call / tool_result 事件：静默忽略（不污染 codeBuffer）
+              case 'tool_call':
+              case 'tool_result':
+                break;
             }
           } catch {
-            // 非 JSON 数据，作为纯文本代码处理
-            callbacks.onCode?.(data);
+            // 非 JSON 数据：只有看起来像 HTML 的内容才当 code 处理
+            if (data.trimStart().startsWith('<')) {
+              callbacks.onCode?.(data);
+            }
           }
         }
       }
@@ -120,19 +134,27 @@ export async function readSSEStream(
         try {
           const raw = JSON.parse(data);
           const result = SSEEventSchema.safeParse(raw);
-          if (result.success && result.data.type === 'code') {
-            callbacks.onCode?.(result.data.content);
-          } else if (!result.success) {
-            callbacks.onCode?.(data);
+          if (result.success) {
+            if (result.data.type === 'code') {
+              callbacks.onCode?.(result.data.content);
+            } else if (result.data.type === 'done') {
+              doneFired = true;
+              callbacks.onDone?.();
+              return;
+            }
           }
+          // schema 验证失败的残留 buffer 数据直接忽略，不当 code 处理
         } catch {
-          callbacks.onCode?.(data);
+          // 非 JSON 残留 buffer 忽略
         }
       }
     }
-
-    callbacks.onDone?.();
   } finally {
     reader.releaseLock();
+    // 兜底：如果整个流程中 onDone/onError 都未被触发，确保 onDone 被调用
+    // 防止 UI 永远卡在 "正在生成" 状态
+    if (!doneFired) {
+      callbacks.onDone?.();
+    }
   }
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"regexp"
@@ -250,8 +251,18 @@ func (c *agentClient) parseSSEData(eventType, data string) SSEEvent {
 			if html, ok := codeData["html"].(string); ok {
 				return SSEEvent{Type: SSETypeCode, Content: html}
 			}
+			// JSON 解析成功但没有 html 字段，尝试 content 字段
+			if content, ok := codeData["content"].(string); ok {
+				return SSEEvent{Type: SSETypeCode, Content: content}
+			}
 		}
-		// Fallback: return data as-is
+		// Fallback: 只有当原始数据看起来像 HTML 时才当作代码
+		// 防止 JSON 垃圾被当作 HTML 传给前端
+		trimmed := strings.TrimSpace(data)
+		if strings.HasPrefix(trimmed, "<") || strings.HasPrefix(trimmed, "<!") {
+			return SSEEvent{Type: SSETypeCode, Content: data}
+		}
+		log.Printf("[AgentClient] code event has unexpected format: %.100s", data)
 		return SSEEvent{Type: SSETypeCode, Content: data}
 	case "agent_start":
 		// Pass through agent_start with agent name and description

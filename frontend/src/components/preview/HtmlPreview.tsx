@@ -50,8 +50,19 @@ const ANNOTATION_SCRIPT = `
   let annotationMode = false;
   let hoveredElement = null;
 
-  // 阻止 JS 导航（window.open, window.location 赋值等）
+  // 阻止 JS 导航（window.open, window.location 赋值, assign, replace 等）
   window.open = function() { return null; };
+  try {
+    Object.defineProperty(window, 'location', {
+      configurable: false,
+      get: function() { return location; },
+      set: function() { /* 阻止 window.location = ... */ }
+    });
+  } catch(e) { /* 某些环境不允许重定义 */ }
+  var origAssign = Location.prototype.assign;
+  var origReplace = Location.prototype.replace;
+  Location.prototype.assign = function() { /* blocked */ };
+  Location.prototype.replace = function() { /* blocked */ };
 
   // 生成元素的 CSS 选择器
   function getSelector(el) {
@@ -134,13 +145,10 @@ const ANNOTATION_SCRIPT = `
       }
     }
 
-    // 拦截表单提交导航
+    // 拦截所有表单提交导航（不仅限于 http/slash action）
     const form = e.target.closest('form');
-    if (form) {
-      const action = form.getAttribute('action');
-      if (action && (action.startsWith('http') || action.startsWith('/'))) {
-        e.preventDefault();
-      }
+    if (form && (e.target.type === 'submit' || e.target.closest('[type="submit"]'))) {
+      e.preventDefault();
     }
 
     // 标注模式：选中元素
@@ -161,6 +169,16 @@ const ANNOTATION_SCRIPT = `
 
     window.parent.postMessage({ type: 'elementSelected', info: info }, '*');
   }, true);
+
+  // 拦截所有 form submit 事件
+  document.addEventListener('submit', function(e) {
+    e.preventDefault();
+  }, true);
+
+  // hashchange 安全网：阻止 hash 变化触发的导航行为
+  window.addEventListener('hashchange', function(e) {
+    e.preventDefault();
+  });
 })();
 </script>
 `;
@@ -218,14 +236,25 @@ ${finalHtml}
 </html>`;
       }
 
-      // 注入标注模式脚本（在最后一个 </body> 前）
-      // 必须用 lastIndexOf 找最后一个 </body>，因为 LLM 代码中可能
-      // 在 JS 字符串里包含 '</body>'，String.replace 会匹配第一个
-      const lastBodyIdx = finalHtml.lastIndexOf('</body>');
-      if (lastBodyIdx !== -1) {
-        finalHtml = finalHtml.substring(0, lastBodyIdx) + ANNOTATION_SCRIPT + finalHtml.substring(lastBodyIdx);
+      // 注入标注模式脚本到 <head> 内部（紧跟 <head...> 之后）
+      // 原来注入在 </body> 前，但 LLM 生成的 HTML 可能有未闭合的
+      // <style>/<script>/<textarea> 等元素，导致浏览器将注入的脚本
+      // 当作这些未闭合元素的文本内容解析，脚本不执行反而显示为可见文本。
+      // 注入到 <head> 内可避免此问题，因为 head 在 body 之前解析。
+      const headMatch = finalHtml.match(/<head[^>]*>/i);
+      if (headMatch) {
+        const insertPos = finalHtml.indexOf(headMatch[0]) + headMatch[0].length;
+        finalHtml = finalHtml.substring(0, insertPos) + ANNOTATION_SCRIPT + finalHtml.substring(insertPos);
       } else {
-        finalHtml += ANNOTATION_SCRIPT;
+        // fallback: 尝试在 <html...> 后插入
+        const htmlMatch = finalHtml.match(/<html[^>]*>/i);
+        if (htmlMatch) {
+          const insertPos = finalHtml.indexOf(htmlMatch[0]) + htmlMatch[0].length;
+          finalHtml = finalHtml.substring(0, insertPos) + ANNOTATION_SCRIPT + finalHtml.substring(insertPos);
+        } else {
+          // 最终 fallback: prepend
+          finalHtml = ANNOTATION_SCRIPT + finalHtml;
+        }
       }
 
       // 使用 srcdoc 设置 iframe 内容

@@ -21,7 +21,7 @@ export type UploadResponse = z.infer<typeof UploadResponseSchema>;
 
 // SSE 事件
 export const SSEEventSchema = z.object({
-  type: z.enum(['thinking', 'code', 'done', 'error', 'agent_start', 'agent_result']),
+  type: z.enum(['thinking', 'code', 'done', 'error', 'agent_start', 'agent_result', 'tool_call', 'tool_result']),
   content: z.string(),
   agent: z.string().optional(),
 });
