@@ -61,7 +61,11 @@ func (h *GenerateHandler) Handle(c *gin.Context) {
 //	{"type": "<event_type>", "content": "<content>", "agent": "<agent>"}
 func streamSSE(c *gin.Context, eventChan <-chan service.SSEEvent) {
 	// Set SSE headers
-	c.Header("Content-Type", "text/event-stream")
+	// charset=utf-8 is critical: without it, clients following RFC 2616 (e.g. Python
+	// requests) default to ISO-8859-1 and decode UTF-8 continuation byte 0x85 as the
+	// NEL control char, which Python str.splitlines() treats as a line break — splitting
+	// a single data: line mid-character and breaking JSON parsing downstream.
+	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no") // Disable nginx buffering

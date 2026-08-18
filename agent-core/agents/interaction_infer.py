@@ -27,6 +27,7 @@ class InteractionInferAgent(BaseAgent):
         self,
         layout_info: Optional[LayoutInfo] = None,
         component_info: Optional[ComponentList] = None,
+        frame_count: int = 0,
         **kwargs,
     ) -> str:
         """Build the interaction inference prompt.
@@ -34,6 +35,9 @@ class InteractionInferAgent(BaseAgent):
         Args:
             layout_info: Layout information from LayoutAnalyzer
             component_info: Component information from ComponentDetector
+            frame_count: Number of input design frames, drives the frame-aware
+                degradation rules embedded in the prompt (1 = single, 2 = strict,
+                >=3 = full state machine)
 
         Returns:
             Formatted interaction inference prompt
@@ -47,6 +51,7 @@ class InteractionInferAgent(BaseAgent):
             component_str = json.dumps(component_info.model_dump(), ensure_ascii=False, indent=2)
 
         return INTERACTION_INFER_PROMPT.format(
+            frame_count=frame_count,
             layout_info=layout_str,
             component_info=component_str,
         )

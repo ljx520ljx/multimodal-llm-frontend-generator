@@ -314,6 +314,13 @@ class CodeValidator:
     ) -> ValidationResult:
         """Run full validation including state machine checks.
 
+        Scope-aware: only ``scope == "page"`` states/transitions are enforced
+        as hard errors (they must appear as ``currentState === 'id'`` /
+        ``currentState = 'id'`` literals). ``scope == "component"`` entries
+        are degraded to warnings because their correct Alpine implementation
+        (local boolean / numeric ``x-data`` variables) does not contain the
+        state id as a literal.
+
         Args:
             html: The HTML code to validate
             interaction_spec: Optional interaction specification for transition checks
@@ -330,19 +337,79 @@ class CodeValidator:
         errors = list(basic_result.errors)
         warnings = list(basic_result.warnings)
 
-        # Validate states coverage
-        expected_states = [s.id for s in interaction_spec.states]
-        states_result = self.validate_states_coverage(html, expected_states)
-        errors.extend(states_result.errors)
-        warnings.extend(states_result.warnings)
+        # Partition states by scope.
+        # Back-compat: states without explicit scope default to "page" (Pydantic default).
+        page_states = [s for s in interaction_spec.states if getattr(s, "scope", "page") == "page"]
+        component_states = [s for s in interaction_spec.states if getattr(s, "scope", "page") == "component"]
 
-        # Validate transitions
-        transitions_result = self.validate_transitions(html, interaction_spec)
-        errors.extend(transitions_result.errors)
-        warnings.extend(transitions_result.warnings)
+        # Hard coverage check for page-scope states only.
+        if page_states:
+            page_result = self.validate_states_coverage(html, [s.id for s in page_states])
+            errors.extend(page_result.errors)
+            warnings.extend(page_result.warnings)
+
+        # Soft check for component-scope states: we only require *some* local
+        # Alpine binding exists (x-data / x-show / x-model / @input / @click).
+        # Missing such binding is a warning, not an error.
+        if component_states and not self._has_local_alpine_bindings(html):
+            warnings.append(
+                f"组件级状态 ({', '.join(s.id for s in component_states)}) "
+                "未检测到任何 x-data 局部变量或 x-show / x-model / @click 绑定"
+            )
+
+        # Partition transitions by scope (fall back via source state's scope).
+        state_scope_map = {s.id: getattr(s, "scope", "page") for s in interaction_spec.states}
+        page_transitions = []
+        component_transitions = []
+        for t in interaction_spec.transitions:
+            t_scope = getattr(t, "scope", None) or state_scope_map.get(t.from_state, "page")
+            if t_scope == "page":
+                page_transitions.append(t)
+            else:
+                component_transitions.append(t)
+
+        if page_transitions:
+            # Build a lightweight spec with only page transitions for strict check.
+            page_only_spec = interaction_spec.model_copy(update={
+                "states": page_states or interaction_spec.states,
+                "transitions": page_transitions,
+            })
+            transitions_result = self.validate_transitions(html, page_only_spec)
+            errors.extend(transitions_result.errors)
+            warnings.extend(transitions_result.warnings)
+
+        if component_transitions:
+            warnings.append(
+                f"{len(component_transitions)} 条组件级 transition 未做字面量校验（"
+                "组件级交互通过局部变量/事件实现，不强制 currentState 字面量）"
+            )
 
         return ValidationResult(
             valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
         )
+
+    @staticmethod
+    def _has_local_alpine_bindings(html: str) -> bool:
+        """Cheap check: does the HTML contain any Alpine binding beyond the
+        top-level currentState wrapper? Used as a soft check for component-
+        scope states."""
+        soup = BeautifulSoup(html, "html.parser")
+        local_only_directives = {"x-model", "@input", "@change", "@mousedown", "@mouseup"}
+
+        for tag in soup.find_all(True):
+            attrs = tag.attrs
+            if any(name in attrs for name in local_only_directives):
+                return True
+
+            x_data = attrs.get("x-data")
+            if isinstance(x_data, str) and not re.search(r"\bcurrentState\b", x_data):
+                return True
+
+            for directive in ("x-show", "@click"):
+                expression = attrs.get(directive)
+                if isinstance(expression, str) and not re.search(r"\bcurrentState\b", expression):
+                    return True
+
+        return False

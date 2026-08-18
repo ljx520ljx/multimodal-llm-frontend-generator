@@ -113,8 +113,10 @@ export function useGeneration() {
         }
       },
       onCode: (content) => {
-        // Fast 模式: CODE 事件是流式 token 片段，需要累加
-        // Quality 模式: CODE 事件是完整 HTML，需要替换（避免双重 HTML）
+        // Fast 模式: CODE 事件是流式 token 片段 → 累加
+        // Quality 模式: CODE 事件是完整 HTML → 覆盖
+        //   CodeGenerator agent 在每次 retry 都会 emit 一次完整 HTML
+        //   （code_generator.py），覆盖保证只保留最后一次有效产物。
         const mode = useProjectStore.getState().generationMode;
         if (mode === 'quality') {
           codeBuffer = content;
@@ -291,6 +293,13 @@ export function useGeneration() {
       const message =
         error instanceof Error ? error.message : '生成失败，请重试';
       setError(message);
+    } finally {
+      // 确保 status 不会卡在 uploading/generating（setError 已设置 'error'，
+      // 此处兜底处理 setError 未被调用的极端情况）
+      const finalStatus = useProjectStore.getState().status;
+      if (finalStatus === 'uploading' || finalStatus === 'generating') {
+        setStatus('error');
+      }
     }
   }, [
     setStatus,
@@ -305,8 +314,13 @@ export function useGeneration() {
   ]);
 
   const regenerate = useCallback(async () => {
-    const { sessionId, imageIds, generationMode } = useProjectStore.getState();
+    const { sessionId, imageIds, generationMode, images } = useProjectStore.getState();
     if (!sessionId || imageIds.length === 0) {
+      // imageIds 未持久化，页面刷新后为空；如果 store 中仍有图片，回退到完整 generate 流程
+      if (images.length > 0) {
+        await generate();
+        return;
+      }
       setError('无法重新生成：缺少会话信息，请重新上传设计稿');
       return;
     }
@@ -333,8 +347,14 @@ export function useGeneration() {
       const message =
         error instanceof Error ? error.message : '重新生成失败，请重试';
       setError(message);
+    } finally {
+      const finalStatus = useProjectStore.getState().status;
+      if (finalStatus === 'uploading' || finalStatus === 'generating') {
+        setStatus('error');
+      }
     }
   }, [
+    generate,
     setStatus,
     setThinking,
     setError,

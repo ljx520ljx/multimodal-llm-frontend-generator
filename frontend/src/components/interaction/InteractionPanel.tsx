@@ -75,24 +75,27 @@ export function InteractionPanel() {
     }
   }, [startNewProject]);
 
+  // 粘贴图片回调：直接添加到上传区域
+  const handleImagesPaste = useCallback(
+    (files: File[]) => {
+      const newImages: ImageFile[] = files.map((file, i) => ({
+        id: generateId(),
+        file,
+        preview: URL.createObjectURL(file),
+        order: images.length + i,
+      }));
+      addImages(newImages);
+    },
+    [images.length, addImages]
+  );
+
   // 处理发送
   const handleSend = useCallback(
-    async (text: string, pastedImages: File[]) => {
-      // 如果有粘贴的图片，添加到图片列表
-      if (pastedImages.length > 0) {
-        const newImages: ImageFile[] = pastedImages.map((file, i) => ({
-          id: generateId(),
-          file,
-          preview: URL.createObjectURL(file),
-          order: images.length + i,
-        }));
-        addImages(newImages);
-      }
-
+    async (text: string) => {
       // 判断是生成还是对话修改
       if (!hasCode) {
         // 首次生成
-        if (images.length > 0 || pastedImages.length > 0) {
+        if (images.length > 0) {
           // 有图片：正常生成
           await generate(text);
         } else if (text && generationMode === 'quality') {
@@ -112,7 +115,7 @@ export function InteractionPanel() {
         }
       }
     },
-    [images.length, hasCode, sessionId, generationMode, addImages, generate, sendMessage, addAssistantMessage]
+    [images.length, hasCode, sessionId, generationMode, generate, sendMessage, addAssistantMessage]
   );
 
   // 确定按钮文字
@@ -233,6 +236,7 @@ export function InteractionPanel() {
       {/* 统一输入框 */}
       <UnifiedInput
         onSend={handleSend}
+        onImagesPaste={handleImagesPaste}
         disabled={isProcessing}
         placeholder={getPlaceholder()}
         buttonText={getButtonText()}

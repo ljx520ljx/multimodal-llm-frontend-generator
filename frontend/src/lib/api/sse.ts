@@ -12,11 +12,11 @@ interface SSECallbacks {
 /**
  * Timeout in ms — if no data received within this window, consider connection stalled.
  * This is the outermost timeout in the chain. Under normal conditions, inner layers
- * (Python LLM 120s → Go Agent 360s → Go Handler 480s) should timeout first and
- * return meaningful errors. This 600s value is a last-resort safety net.
- * Quality 模式需要 4+ 个 Agent 串行调用，总时间可达 200-400s。
+ * (Python LLM 240s → Go Agent 600s → Go Handler 720s) should timeout first and
+ * return meaningful errors. This 900s value is a last-resort safety net.
+ * Quality 模式需要 4+ 个 Agent 串行调用，复杂设计稿总时间可达 400-600s。
  */
-const SSE_READ_TIMEOUT = 600_000; // 10 minutes (outermost timeout)
+const SSE_READ_TIMEOUT = 900_000; // 15 minutes (outermost timeout)
 
 export async function readSSEStream(
   response: Response,

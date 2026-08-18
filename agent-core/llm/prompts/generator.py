@@ -41,24 +41,56 @@ CODE_GENERATOR_PROMPT = """你是一位专业的前端开发工程师。请根�
 </html>
 ```
 
-### 2. 状态机实现
-- 使用 `x-data` 定义 `currentState` 变量
-- 使用 `x-show` 控制各状态的显示/隐藏
-- 使用 `@click` 实现状态转换
+### 2. 状态机实现——**按 state.scope 选择实现范式**
+
+InteractionSpec 的每个 state/transition 都带 `scope` 字段，**必须按 scope 选择实现模式**，两种模式不可混用：
+
+#### 2.1 `scope == "page"` → 顶层 currentState 字面量
+- 顶层 `x-data="{{ currentState: '<initial_state_id>' }}"`
+- 每个 page state 必须有对应的 `x-show="currentState === '<state.id>'"` 分支，**state.id 必须原样作为字符串字面量出现**
+- 每个 page transition 必须有对应的 `@click="currentState = '<to_state.id>'"`（同样 id 字面量）
 
 ```html
-<!-- 状态1: 首页 -->
-<div x-show="currentState === 'home'">
-    <!-- 首页内容 -->
-    <button @click="currentState = 'search'">搜索</button>
-</div>
-
-<!-- 状态2: 搜索页 -->
-<div x-show="currentState === 'search'">
-    <!-- 搜索页内容 -->
-    <button @click="currentState = 'home'">返回首页</button>
+<div x-data="{{ currentState: 'home' }}">
+    <div x-show="currentState === 'home'">
+        <button @click="currentState = 'search'">搜索</button>
+    </div>
+    <div x-show="currentState === 'search'">
+        <button @click="currentState = 'home'">返回首页</button>
+    </div>
 </div>
 ```
+
+#### 2.2 `scope == "component"` → 组件局部 x-data 变量
+- 组件内部 `x-data="{{ showTooltip: false, value: 50 }}"` 这类**布尔/数值**变量
+- `x-show` / `x-bind:class` 直接引用变量（**不要**写 `currentState === 'xxx'`）
+- 事件通过 `@mousedown` / `@mouseup` / `@input` / `x-model` 修改变量
+- 典型场景：Slider tooltip、Form 校验、Collapse 面板、Popover、Rate 悬停
+
+```html
+<!-- Slider 拖动 tooltip：state.id='dragging' scope=component -->
+<div x-data="{{ value: 50, dragging: false }}">
+    <input type="range" x-model="value"
+           @mousedown="dragging = true" @mouseup="dragging = false">
+    <div x-show="dragging">当前值：<span x-text="value"></span></div>
+</div>
+
+<!-- Collapse 面板：state.id='expanded' scope=component -->
+<div x-data="{{ open: false }}">
+    <button @click="open = !open">面板标题</button>
+    <div x-show="open">面板内容</div>
+</div>
+```
+
+#### 2.3 混合场景
+如果 InteractionSpec 里同时存在 `page` 和 `component` state：
+- 顶层 `x-data` 放 `currentState`
+- 组件级 `x-data` 独立定义局部布尔/数值变量，两者互不干扰
+- 不要把 component state id 写进 `currentState` 切换
+
+#### 2.4 **关键一致性约束**
+- **page scope 的 state/transition**：`state.id` 和 `to_state` 都必须作为字符串字面量出现在 `x-show` / `@click` 中（Validator 会硬校验）
+- **component scope 的 state/transition**：自由使用有语义的布尔/数值变量名（如 `showTooltip`、`open`、`focused`），不必使用 state.id 字面量
 
 ### 3. 样式要求
 - 使用 Tailwind CSS 类名

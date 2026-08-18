@@ -1,45 +1,27 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, KeyboardEvent, ClipboardEvent } from 'react';
-import Image from 'next/image';
+import { useState, useRef, useCallback, KeyboardEvent, ClipboardEvent } from 'react';
 import { Button } from '@/components/ui';
 
-interface PastedImage {
-  id: string;
-  file: File;
-  preview: string;
-}
-
 interface UnifiedInputProps {
-  onSend: (text: string, images: File[]) => void;
+  onSend: (text: string) => void;
+  onImagesPaste?: (files: File[]) => void; // 粘贴图片回调，直接添加到上传区域
   disabled?: boolean;
   placeholder?: string;
   buttonText?: string;
   hasUploadedImages?: boolean; // 是否已有上传的图片（在 store 中）
 }
 
-function generateId() {
-  return Math.random().toString(36).substring(2, 11);
-}
-
 export function UnifiedInput({
   onSend,
+  onImagesPaste,
   disabled = false,
   placeholder = '输入需求描述，支持粘贴图片...',
   buttonText = '发送',
   hasUploadedImages = false,
 }: UnifiedInputProps) {
   const [text, setText] = useState('');
-  const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // 组件卸载时清理未释放的 ObjectURL
-  useEffect(() => {
-    return () => {
-      pastedImages.forEach((img) => URL.revokeObjectURL(img.preview));
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
@@ -57,39 +39,22 @@ export function UnifiedInput({
 
     if (imageFiles.length > 0) {
       e.preventDefault();
-      const newImages = imageFiles.map((file) => ({
-        id: generateId(),
-        file,
-        preview: URL.createObjectURL(file),
-      }));
-      setPastedImages((prev) => [...prev, ...newImages]);
+      // 粘贴的图片直接添加到上传区域（store），不在输入框内显示
+      onImagesPaste?.(imageFiles);
     }
-  }, []);
-
-  const handleRemoveImage = useCallback((id: string) => {
-    setPastedImages((prev) => {
-      const removed = prev.find((img) => img.id === id);
-      if (removed) {
-        URL.revokeObjectURL(removed.preview);
-      }
-      return prev.filter((img) => img.id !== id);
-    });
-  }, []);
+  }, [onImagesPaste]);
 
   const handleSend = useCallback(() => {
     const trimmedText = text.trim();
-    const files = pastedImages.map((img) => img.file);
 
-    // 如果没有文字、没有粘贴图片、也没有已上传的图片，则不发送
-    if (!trimmedText && files.length === 0 && !hasUploadedImages) return;
+    // 如果没有文字、也没有已上传的图片，则不发送
+    if (!trimmedText && !hasUploadedImages) return;
 
-    onSend(trimmedText, files);
+    onSend(trimmedText);
 
-    // 清空状态
+    // 清空文字
     setText('');
-    pastedImages.forEach((img) => URL.revokeObjectURL(img.preview));
-    setPastedImages([]);
-  }, [text, pastedImages, onSend, hasUploadedImages]);
+  }, [text, onSend, hasUploadedImages]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -101,39 +66,11 @@ export function UnifiedInput({
     [handleSend]
   );
 
-  // 可以发送的条件：有文字、有粘贴图片、或已有上传的图片
-  const canSend = text.trim() || pastedImages.length > 0 || hasUploadedImages;
+  // 可以发送的条件：有文字或已有上传的图片
+  const canSend = text.trim() || hasUploadedImages;
 
   return (
     <div className="border-t border-slate-200 bg-white p-3">
-      {/* 粘贴图片预览 */}
-      {pastedImages.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-2">
-          {pastedImages.map((img) => (
-            <div
-              key={img.id}
-              className="group relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200"
-            >
-              <Image
-                src={img.preview}
-                alt="Pasted image"
-                fill
-                className="object-cover"
-                unoptimized
-              />
-              <button
-                onClick={() => handleRemoveImage(img.id)}
-                className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white opacity-0 transition-opacity group-hover:opacity-100"
-              >
-                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* 输入区域 */}
       <div className="flex items-end gap-2">
         <div className="flex-1">

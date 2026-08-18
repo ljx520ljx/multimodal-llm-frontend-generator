@@ -37,7 +37,8 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - AGENT_SERVICE_URL=http://agent:8081
-      - AGENT_TIMEOUT=30s
+      - AGENT_TIMEOUT=600s
+      - HANDLER_TIMEOUT=720s
     depends_on:
       - agent
     networks:
@@ -60,6 +61,7 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       - CHAT_AGENT_MODEL=${CHAT_AGENT_MODEL:-}
+      - LLM_REQUEST_TIMEOUT=240
     networks:
       - app-network
 

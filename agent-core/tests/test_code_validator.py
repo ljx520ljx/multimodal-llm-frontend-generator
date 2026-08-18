@@ -283,6 +283,157 @@ class TestStatesCoverage:
         assert any("extra" in w for w in result.warnings)
 
 
+class TestScopeAwareValidation:
+    """Tests for scope-aware validate_full (page / component partition)."""
+
+    _BASE_HTML_HEAD = (
+        '<!DOCTYPE html><html lang="zh-CN"><head>'
+        '<meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+        '<title>t</title>'
+        '<script src="https://cdn.tailwindcss.com"></script>'
+        '<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>'
+        '</head><body>'
+    )
+    _BASE_HTML_TAIL = '</body></html>'
+
+    def _wrap(self, body: str) -> str:
+        return self._BASE_HTML_HEAD + body + self._BASE_HTML_TAIL
+
+    def _spec(self, states, transitions=None):
+        from schemas.interaction import InteractionSpec, State, Transition
+        return InteractionSpec(
+            summary="t",
+            initial_state=states[0]["id"],
+            states=[State(**s) for s in states],
+            transitions=[Transition(**t) for t in (transitions or [])],
+        )
+
+    def test_pure_page_scope_still_hard_fails_on_missing(self, validator: CodeValidator):
+        """Pure page-scope spec: missing state is still a hard error."""
+        html = self._wrap(
+            '<div x-data="{ currentState: \'home\' }">'
+            '<div x-show="currentState === \'home\'">H</div>'
+            '</div>'
+        )
+        spec = self._spec([
+            {"id": "home", "name": "首页", "image_index": 0, "scope": "page"},
+            {"id": "search", "name": "搜索", "image_index": 1, "scope": "page"},
+        ])
+        result = validator.validate_full(html, spec)
+        assert result.valid is False
+        assert any("search" in e.message for e in result.errors)
+
+    def test_pure_component_scope_does_not_hard_fail(self, validator: CodeValidator):
+        """Pure component-scope spec: id not appearing as literal is OK as
+        long as there are Alpine bindings somewhere."""
+        html = self._wrap(
+            '<div x-data="{ showTooltip: false, value: 50 }">'
+            '<input type="range" x-model="value" '
+            '@mousedown="showTooltip = true" @mouseup="showTooltip = false">'
+            '<div x-show="showTooltip"><span x-text="value"></span></div>'
+            '</div>'
+        )
+        spec = self._spec([
+            {"id": "idle", "name": "静止", "image_index": 0, "scope": "component"},
+            {"id": "tooltip_visible", "name": "提示显示", "image_index": 1, "scope": "component"},
+        ])
+        result = validator.validate_full(html, spec)
+        # No missing_state error even though neither 'idle' nor
+        # 'tooltip_visible' appears as a string literal in x-show.
+        assert not any(e.type == "missing_state" for e in result.errors)
+
+    def test_mixed_scope_only_page_states_checked(self, validator: CodeValidator):
+        """Mixed spec: only page-scope ids are checked against x-show literals."""
+        html = self._wrap(
+            '<div x-data="{ currentState: \'list\' }">'
+            '<div x-show="currentState === \'list\'">'
+            '  <div x-data="{ open: false }">'
+            '    <button @click="open = !open">toggle</button>'
+            '    <div x-show="open">panel</div>'
+            '  </div>'
+            '</div>'
+            '<div x-show="currentState === \'detail\'">d</div>'
+            '</div>'
+        )
+        spec = self._spec([
+            {"id": "list", "name": "列表", "image_index": 0, "scope": "page"},
+            {"id": "detail", "name": "详情", "image_index": 1, "scope": "page"},
+            {"id": "panel_open", "name": "面板展开", "image_index": 0, "scope": "component"},
+        ])
+        result = validator.validate_full(html, spec)
+        # page ids fully covered, component id not required as literal → valid
+        assert result.valid is True
+
+    def test_component_transitions_not_hard_failed(self, validator: CodeValidator):
+        """Component-scope transitions are warnings, not errors, even when
+        their to_state is never assigned via currentState = '...'."""
+        html = self._wrap(
+            '<div x-data="{ showTooltip: false, value: 50 }">'
+            '<input type="range" x-model="value" '
+            '@mousedown="showTooltip = true" @mouseup="showTooltip = false">'
+            '<div x-show="showTooltip">v</div>'
+            '</div>'
+        )
+        spec = self._spec(
+            states=[
+                {"id": "idle", "name": "静止", "image_index": 0, "scope": "component"},
+                {"id": "tooltip_visible", "name": "提示", "image_index": 1, "scope": "component"},
+            ],
+            transitions=[
+                {"from_state": "idle", "to_state": "tooltip_visible",
+                 "trigger": "slider", "trigger_event": "click", "scope": "component"},
+            ],
+        )
+        result = validator.validate_full(html, spec)
+        assert not any(e.type == "missing_transition" for e in result.errors)
+
+    def test_page_state_bindings_do_not_mask_missing_component_binding(
+        self, validator: CodeValidator
+    ):
+        """A top-level page state machine alone is not component interactivity."""
+        html = self._wrap(
+            '<div x-data="{ currentState: \'home\' }">'
+            '<button @click="currentState = \'search\'">search</button>'
+            '<div x-show="currentState === \'home\'">h</div>'
+            '<div x-show="currentState === \'search\'">s</div>'
+            '</div>'
+        )
+        spec = self._spec([
+            {"id": "home", "name": "首页", "image_index": 0, "scope": "page"},
+            {"id": "search", "name": "搜索", "image_index": 1, "scope": "page"},
+            {"id": "panel_open", "name": "面板展开", "image_index": 1, "scope": "component"},
+        ], transitions=[
+            {"from_state": "home", "to_state": "search", "trigger": "search_button",
+             "trigger_event": "click", "scope": "page"},
+        ])
+
+        result = validator.validate_full(html, spec)
+
+        assert result.valid is True
+        assert any("组件级状态 (panel_open)" in warning for warning in result.warnings)
+
+    def test_backward_compat_missing_scope_defaults_to_page(self, validator: CodeValidator):
+        """Old checkpoints / specs without scope field: default to page and
+        still enforce literal coverage."""
+        from schemas.interaction import InteractionSpec, State, Transition
+        # Construct state objects without passing scope — Pydantic default
+        # should be 'page'.
+        spec = InteractionSpec(
+            summary="t", initial_state="home",
+            states=[State(id="home", name="首页", image_index=0),
+                    State(id="search", name="搜索", image_index=1)],
+            transitions=[],
+        )
+        assert spec.states[0].scope == "page"
+        # And hard failure still fires when literal missing:
+        html = self._wrap('<div x-data="{ currentState: \'home\' }">'
+                          '<div x-show="currentState === \'home\'">h</div></div>')
+        result = validator.validate_full(html, spec)
+        assert result.valid is False
+        assert any("search" in e.message for e in result.errors)
+
+
 class TestValidationResult:
     """Tests for ValidationResult model."""
 
