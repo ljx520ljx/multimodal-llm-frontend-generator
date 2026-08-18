@@ -94,6 +94,11 @@ class BaseAgent(ABC):
             )
 
         try:
+            # Inject frame_count so frame-aware prompts (e.g. InteractionInfer)
+            # can degrade inference scope when input is sparse. Other agents
+            # simply ignore it via **kwargs.
+            kwargs.setdefault("frame_count", len(images) if images else 0)
+
             # Build prompt
             prompt = self.build_prompt(**kwargs)
 

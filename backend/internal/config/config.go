@@ -62,8 +62,8 @@ type Config struct {
 
 	// Agent Service (Python)
 	AgentServiceURL string        // Agent service URL (default http://localhost:8081)
-	AgentTimeout    time.Duration // Agent service timeout (default 180s)
-	HandlerTimeout  time.Duration // Handler-level context timeout for SSE endpoints (default 240s)
+	AgentTimeout    time.Duration // Agent service timeout (default 600s)
+	HandlerTimeout  time.Duration // Handler-level context timeout for SSE endpoints (default 720s)
 
 	// Rate Limiting
 	RateLimitIPRate       float64       // Requests per second per IP (default 10)
@@ -115,11 +115,11 @@ func Load() *Config {
 	viper.SetDefault("SESSION_HISTORY_LIMIT", 20)
 
 	// Agent service defaults
-	// Timeout chain (inner → outer): Python LLM 120s < AGENT_TIMEOUT 360s < HANDLER_TIMEOUT 480s < Frontend SSE 600s
-	// Quality 模式需要 4+ 个 Agent 串行调用（各 40-90s），总时间可达 200-400s
+	// Timeout chain (inner → outer): Python LLM 240s < AGENT_TIMEOUT 600s < HANDLER_TIMEOUT 720s < Frontend SSE 900s
+	// Quality 模式需要 4+ 个 Agent 串行调用（各 40-120s），复杂设计稿总时间可达 400-600s
 	viper.SetDefault("AGENT_SERVICE_URL", "http://localhost:8081")
-	viper.SetDefault("AGENT_TIMEOUT", "360s")
-	viper.SetDefault("HANDLER_TIMEOUT", "480s")
+	viper.SetDefault("AGENT_TIMEOUT", "600s")
+	viper.SetDefault("HANDLER_TIMEOUT", "720s")
 
 	// Rate limiting defaults
 	viper.SetDefault("RATE_LIMIT_IP_RATE", 10.0)

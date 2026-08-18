@@ -34,9 +34,9 @@ class Settings(BaseSettings):
     max_retries: int = 3
 
     # LLM request timeout (seconds) — innermost timeout in the chain:
-    # LLM request 120s < Go AGENT_TIMEOUT 360s < Go HANDLER_TIMEOUT 480s < Frontend SSE 600s
-    # CodeGenerator 生成完整 HTML 可能需要 60-90s，分析 Agent 各需 30-60s
-    llm_request_timeout: int = 120
+    # LLM request 240s < Go AGENT_TIMEOUT 600s < Go HANDLER_TIMEOUT 720s < Frontend SSE 900s
+    # CodeGenerator 生成完整 HTML 可能需要 60-120s，分析 Agent 各需 30-60s
+    llm_request_timeout: int = 240
 
     # Internal API token for Go backend checkpoint API (must match Go INTERNAL_API_TOKEN)
     internal_api_token: str = ""
@@ -117,11 +117,11 @@ class Settings(BaseSettings):
     # Code-generation agents need higher limits for full HTML output
     # ===========================================
     default_max_tokens: Optional[int] = None  # None = use model default
-    layout_agent_max_tokens: int = 8192
-    component_agent_max_tokens: int = 8192
-    interaction_agent_max_tokens: int = 8192
-    codegen_agent_max_tokens: int = 16384
-    chat_agent_max_tokens: int = 16384
+    layout_agent_max_tokens: int = 32768
+    component_agent_max_tokens: int = 32768
+    interaction_agent_max_tokens: int = 32768
+    codegen_agent_max_tokens: int = 65536
+    chat_agent_max_tokens: int = 65536
 
     model_config = SettingsConfigDict(
         env_file=".env",

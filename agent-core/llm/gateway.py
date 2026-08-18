@@ -69,7 +69,7 @@ class LLMGateway:
 
         Args:
             request_timeout: Per-request timeout in seconds. This is the innermost
-                timeout in the chain (LLM 60s < Agent 180s < Handler 240s < SSE 300s).
+                timeout in the chain (LLM 240s < Agent 600s < Handler 720s < SSE 900s).
             max_tokens: Maximum number of tokens in the LLM response.
         """
         provider = provider.lower()

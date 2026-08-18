@@ -113,8 +113,10 @@ export function useGeneration() {
         }
       },
       onCode: (content) => {
-        // Fast 模式: CODE 事件是流式 token 片段，需要累加
-        // Quality 模式: CODE 事件是完整 HTML，需要替换（避免双重 HTML）
+        // Fast 模式: CODE 事件是流式 token 片段 → 累加
+        // Quality 模式: CODE 事件是完整 HTML → 覆盖
+        //   CodeGenerator agent 在每次 retry 都会 emit 一次完整 HTML
+        //   （code_generator.py），覆盖保证只保留最后一次有效产物。
         const mode = useProjectStore.getState().generationMode;
         if (mode === 'quality') {
           codeBuffer = content;

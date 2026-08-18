@@ -52,10 +52,10 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
       # Agent Service
-      # Timeout chain (inner → outer): Python LLM 60s < AGENT_TIMEOUT 180s < HANDLER_TIMEOUT 240s < Frontend SSE 300s
+      # Timeout chain (inner → outer): Python LLM 240s < AGENT_TIMEOUT 600s < HANDLER_TIMEOUT 720s < Frontend SSE 900s
       - AGENT_SERVICE_URL=http://agent:8081
-      - AGENT_TIMEOUT=180s
-      - HANDLER_TIMEOUT=240s
+      - AGENT_TIMEOUT=600s
+      - HANDLER_TIMEOUT=720s
       # Image Processing
       - IMAGE_MAX_SIZE=10485760
       - IMAGE_MAX_TOTAL=52428800
@@ -92,7 +92,7 @@ services:
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-}
       - BACKEND_URL=http://backend:8080
       # LLM request timeout (innermost in the timeout chain)
-      - LLM_REQUEST_TIMEOUT=60
+      - LLM_REQUEST_TIMEOUT=240
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 10s

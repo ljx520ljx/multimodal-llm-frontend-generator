@@ -243,10 +243,8 @@ class GenerateWorkflow:
                     state.success = True
                     state.final_html = state.generated_code.html
                     await self._save_checkpoint(state)
-                    yield SSEEvent(
-                        event=SSEEventType.CODE,
-                        data={"html": state.generated_code.html},
-                    )
+                    # CodeGenerator agent already emitted the CODE event
+                    # (code_generator.py ~:130). Workflow only signals DONE.
                     yield SSEEvent(
                         event=SSEEventType.DONE,
                         data={"success": True},
@@ -269,19 +267,21 @@ class GenerateWorkflow:
                 retry_count += 1
                 state.retry_count = retry_count
 
-        # Max retries reached
+        # Max retries reached. Keep the latest artifact in the checkpoint for
+        # diagnosis/recovery, but preserve the public contract: validation
+        # exhaustion is a failed generation, not a successful one.
         logger.warning(f"Max retries ({max_retries}) reached for code generation")
         last_code = state.generated_code
         if last_code and getattr(last_code, "html", None):
             state.final_html = last_code.html
-            yield SSEEvent(
-                event=SSEEventType.CODE,
-                data={"html": last_code.html},
-            )
+        state.success = False
+        state.error = "达到最大重试次数，输出未通过完整验证"
+        await self._save_checkpoint(state)
+
         yield SSEEvent(
             event=SSEEventType.ERROR,
             data={
-                "error": "达到最大重试次数，输出未通过完整验证",
+                "error": state.error,
                 "validation_errors": state.validation_errors,
             },
         )
